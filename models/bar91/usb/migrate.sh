@@ -86,7 +86,7 @@ while [ -d /tmp/jbl-standard-hook-active ] || [ -d /tmp/jbl-standard-watch-activ
     "$BB" sleep 1; legacy_wait=$((legacy_wait+1))
 done
 legacy_check || finish MIGRATION_HOOK_OR_FILES_CHANGED_PRESERVED 1
-# The reviewed rev6 base hook has no earlier vendor/custom hook to restore.
+# The reviewed rev5/rev6 base hook has no earlier vendor/custom hook to restore.
 if regular "$HOOK"; then "$BB" rm "$HOOK" || finish MIGRATION_HOOK_REMOVE_FAILED 1; fi
 "$BB" sync
 for legacy_spec in "$REMOTE_STORE:JBLRemote" "$SSH_STORE:JBLLocalSSH" "$STANDARD_STORE:JBLStandard"; do

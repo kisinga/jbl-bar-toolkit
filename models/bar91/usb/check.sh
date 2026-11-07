@@ -36,7 +36,7 @@ preflight_all || result=1
 migration_eligible=false
 if legacy_check; then
     migration_eligible=true
-    printf 'MIGRATION_ELIGIBLE=true\nPROFILE=reviewed-rev6-prototype-ssh-remote-chain\n' > "$USB/MIGRATION_CHECK.txt"
+    printf 'MIGRATION_ELIGIBLE=true\nPROFILE=reviewed-%s-prototype-ssh-remote-chain\n' "$LEGACY_STANDARD_REVISION" > "$USB/MIGRATION_CHECK.txt"
 else
     printf 'MIGRATION_ELIGIBLE=false\nREASON=%s\n' "$LEGACY_REASON" > "$USB/MIGRATION_CHECK.txt"
 fi

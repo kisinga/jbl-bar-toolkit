@@ -120,7 +120,7 @@ hardware qualification obligations, recorded separately from machine receipts.
 
 Standalone installers refuse toolkit-owned stores. Normal installation preserves
 and refuses existing standalone paths. Explicit `action=migrate` accepts only
-the exact reviewed rev6/SSH/remote scripts, owners and hook snapshots. It retires
+the exact reviewed rev5 (public v0.1.0) or rev6/SSH/remote scripts, owners and hook snapshots. It retires
 their live paths into a private archive on the same filesystem, retaining the
 SSH host key, before normal installation. Unknown chains remain blocked.
 Recovery disables the toolkit; it does not silently reactivate archived services.
