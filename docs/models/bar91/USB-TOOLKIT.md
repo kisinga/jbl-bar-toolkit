@@ -172,7 +172,58 @@ recognized partial retirement can resume. Unknown scripts, symlinks, changed
 hooks and unrelated live PIDs stop migration. Keep the original installers for
 their own recovery; do not remove unknown stores to force eligibility.
 
+The public `v0.1.0` Smart Mode release installs rev5 (`JBL_STANDARD_HOOK_REV5`), so it is
+not a migration source. `MIGRATION_CHECK.txt` then reports
+`LEGACY_OWNERSHIP_OR_FILE_TYPE_MISMATCH`, even when the SSH and web remote files match.
+Remove that chain in the standalone order below.
+
 For other chains, use the original [standalone removal order](STANDALONE.md#remove-or-recover): web remote → SSH → Smart Mode. Standalone removers can retain files. Preserve those directories outside active paths and verify the original hook is restored before installation. This remains developer-controlled work requiring access and recovery.
+
+**Restart the bar after the last remover and before installing.** A standalone SSH
+server keeps listening on port 2222 until the bar restarts, even after its files are
+removed. The new SSH step then fails with `SSH_INSTALL_FAILED`, and `sshd.log` shows
+`Bind to port 2222 ... failed: Address already in use`.
+
+## If an installation fails
+
+A failed installation leaves the toolkit disabled on purpose, so a half-configured
+setup can never start at the next boot. Getting back on track depends on keeping the
+exact files you started with.
+
+**Before you insert the USB**
+
+- Copy everything on the prepared USB, including the whole `JBLToolkit` folder, to a
+  folder on your computer. Keep the recovery ZIP next to it. Configure and recovery
+  need this exact package; a newly prepared USB is a different package and is
+  refused with `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB`.
+- Don't delete or rename files in `JBLToolkit`. Windows hides file extensions by
+  default, so `recover.sh` shows up as **recover**. It is a required script, not the
+  `RECOVER` marker described under [Recovery](#recovery). Without it the USB stops at
+  `BOOTSTRAP_FILE_MISSING_OR_UNSAFE`. To see extensions, turn on **File name
+  extensions** in File Explorer's **View** menu.
+
+**After a failure**
+
+1. Read `JBLToolkit/STATUS.txt` and the newest `RESULT=... EXIT=...` line in
+   `JBLToolkit/setup.log`. Look the code up in [Troubleshooting](#troubleshooting).
+2. Fix the cause. For example, restart the bar if an earlier SSH server still held
+   port 2222, or correct the Wi-Fi network for `WIFI_SETUP_INCOMPLETE`.
+3. Retry with the same package. If the USB was changed, restore the copy from your
+   computer first. Then use `action=configure` (in the setup app: **Apply
+   configuration changes**, without formatting) and insert it. Inserting it again with
+   `action=install` only reports `TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER`.
+4. To back out instead, follow [Recovery](#recovery) with the same USB or the matching
+   recovery ZIP.
+
+| You see | What it means |
+| --- | --- |
+| `TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER` | An earlier attempt failed and left the toolkit disabled. Use configure or recovery with the same package. |
+| `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB` | The USB holds a different package from the one on the bar. Restore your copy of the original USB. |
+| `BOOTSTRAP_FILE_MISSING_OR_UNSAFE` | `dispatch.sh`, `launch.sh`, `common.sh`, `recover.sh` or `BOOTSTRAP.SHA256SUMS` is missing from `JBLToolkit`. Restore your copy of the original USB. |
+
+If the original package is lost, run recovery from the matching recovery ZIP and ask
+in an [issue](https://github.com/kisinga/jbl-bar-toolkit/issues) before trying again.
+Don't remove `/var/JBLToolkit` by hand to force a fresh install.
 
 Toolkit-managed components have `TOOLKIT` markers. Their standalone web installers and SSH hook tools refuse to modify them; use the toolkit configuration/recovery instead.
 

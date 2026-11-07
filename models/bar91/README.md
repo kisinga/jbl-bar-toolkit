@@ -48,6 +48,8 @@ For **standalone installations**, use their [matching recovery instructions](../
 | `PREFLIGHT_FAILED_CHECK_FIRMWARE_STORAGE_AND_NATIVE_SSH` | Check the supported firmware, writable storage/free space and native SSH requirements. |
 | `EXISTING_COMPONENT_REMOVE_WITH_ORIGINAL_INSTALLER` | Follow the standalone recovery/migration instructions; preserve existing files. |
 | `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB` | Choose Install / update everything for a newer build; use configure on the same package for deliberate credential/settings changes. |
+| `TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER` | An earlier attempt failed. Retry with configure or recover on the same package; see [If an installation fails](../../docs/models/bar91/USB-TOOLKIT.md#if-an-installation-fails). |
+| `BOOTSTRAP_FILE_MISSING_OR_UNSAFE` | A required file such as `recover.sh` (shown as "recover" in Windows) was removed from `JBLToolkit`. Restore your copy of the original USB. |
 | `BUSY_RETRY_AFTER_BOOT_OR_CURRENT_OPERATION` | Let boot/current work finish, then reinsert. |
 | Other failure or incomplete recovery | Read `setup.log`, retain the drive and use the [detailed troubleshooting guide](../../docs/models/bar91/USB-TOOLKIT.md#troubleshooting). |
 
