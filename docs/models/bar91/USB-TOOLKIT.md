@@ -187,6 +187,7 @@ Read `JBLToolkit/STATUS.txt` and the newest `RESULT=... EXIT=...` entry in `setu
 | `PACKAGE_INTEGRITY_FAILED` | Immutable scripts/binary/credentials differ from the package manifest. Re-extract the original package. Config changes do not require checksum edits. Emergency recovery still works. |
 | `CONFIG_INVALID` | The parser explains the error in `setup.log`. Fix data; never insert shell code or edit the generated plan. |
 | `PREFLIGHT_FAILED_CHECK_FIRMWARE_STORAGE_AND_NATIVE_SSH` | No installation changes: read `PREFLIGHT_REASON` in `setup.log` for the failed firmware/CLI, UBIFS, BusyBox, free-space or native SSH guard. Preserve checks. |
+| `PREFLIGHT_REASON=SSH_PORT_2222_IN_USE_RESTART_BAR_FIRST` | Another process listens on port 2222, usually the SSH server of a standalone installation you removed or moved aside. It keeps running until the bar restarts. Restart the bar, then insert the same USB again. No installation changes were made. |
 | `SSH_CREDENTIALS_NOT_BUNDLED` | Add your derived SSH credential through the setup app/config, or use the original bundled private hash. There is no shared/default password. |
 | `MIGRATION_SSH_CREDENTIALS_REQUIRED_NO_CHANGES` | Migration with SSH selected needs your config/bundled hash before any legacy service is disabled. |
 | `TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER` | A prior failure/recovery disabled startup. Read logs, then explicitly configure or recover. Passive reinsertion does not clear the guard. |

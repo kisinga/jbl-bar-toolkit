@@ -76,7 +76,25 @@ preflight_ssh() {
         (JBL_SSH_STORE="$SSH_STORE"; export JBL_SSH_STORE; . "$USB/files/ssh/common.sh" && verify_tools) || return 1
         PREFLIGHT_REASON=SSH_CREDENTIALS_REQUIRED
         [ -n "${SSH_PASSWORD_HASH-}" ] || regular "$USB/files/ssh/password.hash" || return 1
+        preflight_ssh_port || return 1
     fi
+}
+
+# A standalone sshd from a removed or moved-aside installation keeps listening
+# on 2222 until the bar restarts, and the new listener then fails to bind.
+# Accept a listener only when it is the sshd recorded by the SSH store: the
+# reviewed migration source that migrate.sh stops, or the toolkit's own daemon.
+preflight_ssh_port() {
+    PREFLIGHT_REASON=SSH_PORT_STATE_UNREADABLE
+    [ -r /proc/net/tcp ] || return 1
+    # Local port 2222 is 08AE; state 0A is LISTEN. tcp6 is absent without IPv6.
+    if "$BB" cat /proc/net/tcp /proc/net/tcp6 2>/dev/null |
+       "$BB" awk '$4=="0A" && $2 ~ /:08AE$/ {found=1} END {exit !found}'; then
+        PREFLIGHT_REASON=SSH_PORT_2222_IN_USE_RESTART_BAR_FIRST
+        # Subshell: process_owned sets process_pid, which the manager reuses.
+        (process_owned "$SSH_STORE/sshd.pid" "" ssh) || return 1
+    fi
+    return 0
 }
 
 # Source FAT allocation units can be 64 KiB; they do not describe UBIFS cost.
