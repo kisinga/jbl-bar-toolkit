@@ -152,7 +152,21 @@ fi
 printf 'ALLOWED_PC=%s\nINTERFACE=wlan0\nAUTOSTART=1\n' "$ALLOWED_CIDR" > "$STORE/ssh-input/settings.conf" || finish SSH_SETTINGS_FAILED 1
 if regular "$STORE/ssh-input/wifi.ssid.hex"; then
     "$BB" mkdir -p "$STORE/network" || finish NETWORK_STORE_FAILED 1
-    JBL_SSH_USB="$STORE/ssh-input" JBL_SSH_STORE="$STORE/network" "$BB" timeout 130 /bin/sh "$STORE/ssh-input/wifi.sh" || finish WIFI_SETUP_INCOMPLETE 1
+    JBL_SSH_USB="$STORE/ssh-input" JBL_SSH_STORE="$STORE/network" "$BB" timeout 130 /bin/sh "$STORE/ssh-input/wifi.sh" || {
+        wifi_exit=$?
+        # wifi.sh writes its reason into the bar's staging directory, which the
+        # owner cannot read without SSH. Copy that one status token to the USB.
+        wifi_reason=UNKNOWN
+        if regular "$STORE/ssh-input/WIFI_STATUS.txt"; then
+            IFS= read -r wifi_reason < "$STORE/ssh-input/WIFI_STATUS.txt" || :
+            case "$wifi_reason" in
+                ''|*[!A-Z0-9_]*) wifi_reason=UNKNOWN;;
+                *) printf '%s\n' "$wifi_reason" > "$USB/WIFI_STATUS.txt" || :;;
+            esac
+        fi
+        printf 'WIFI_REASON=%s WIFI_EXIT=%s\n' "$wifi_reason" "$wifi_exit"
+        finish WIFI_SETUP_INCOMPLETE 1
+    }
     # Wi-Fi was handled independently; do not repeat provisioning in SSH setup.
     "$BB" rm "$STORE/ssh-input/wifi.ssid.hex" "$STORE/ssh-input/wifi.psk.hex" || finish WIFI_STAGE_CLEANUP_FAILED 1
 fi
