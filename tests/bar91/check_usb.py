@@ -261,6 +261,11 @@ exit 0
                 remote.mkdir(); ssh.mkdir()
                 shutil.copytree(ROOT / 'models/bar91/smart-mode/JBLInstall/payload', standard)
                 fixture = ROOT / 'tests/bar91/fixtures/legacy'
+                if migration.startswith('rev5'):
+                    # Public v0.1.0 payload: rev5 owner, run.sh and once.sh; the rest equals rev6.
+                    names = ('OWNER.txt', 'checksums.txt') if migration == 'rev5_with_rev6_scripts' else ('OWNER.txt', 'checksums.txt', 'run.sh', 'once.sh')
+                    for name in names:
+                        (standard / name).write_bytes((fixture / ('standard-rev5-' + name)).read_bytes())
                 for name in ('start.sh', 'install.sh', 'uninstall.sh'):
                     (remote / name).write_bytes((fixture / ('remote-' + name)).read_bytes())
                 (remote / 'OWNER.txt').write_text('JBL_WEB_REMOTE_REV1\n')
@@ -319,7 +324,7 @@ exit 0
                         assert result.returncode != 0 and status == 'MIGRATION_SSH_CREDENTIALS_REQUIRED_NO_CHANGES', status
                         assert not store.exists() and not archive.exists() and remote.exists() and ssh.exists() and standard.exists()
                         assert hook.read_bytes() == web_hook and not (remote / 'DISABLED').exists()
-                    elif migration in ('changed_script', 'changed_hook', 'symlink'):
+                    elif migration in ('changed_script', 'changed_hook', 'symlink', 'rev5_with_rev6_scripts'):
                         assert result.returncode != 0 and status == 'MIGRATION_IDENTITY_FAILED_NO_CHANGES', (status, (usb / 'setup.log').read_text())
                         assert not store.exists() and not archive.exists() and remote.exists() and ssh.exists() and standard.exists()
                         assert not (remote / 'DISABLED').exists()
@@ -576,7 +581,7 @@ exit 0
                     except ProcessLookupError:
                         pass
 
-    for migration in ('complete', 'resume', 'live_remote', 'changed_script', 'changed_hook', 'symlink', 'unrelated_pid', 'missing_credentials'):
+    for migration in ('complete', 'resume', 'live_remote', 'changed_script', 'changed_hook', 'symlink', 'unrelated_pid', 'missing_credentials', 'rev5', 'rev5_with_rev6_scripts'):
         scenario('legacy_migration_' + migration, config=changed(action='migrate'), migration=migration)
     scenario('automatic_legacy_update', config=changed(action='update'), migration='complete')
     scenario('automatic_clean_update', config=changed(action='update',ssh='false'))

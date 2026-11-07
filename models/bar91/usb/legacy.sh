@@ -34,8 +34,21 @@ legacy_check() {
     LEGACY_STANDARD=$legacy_path
     LEGACY_REASON=LEGACY_OWNERSHIP_OR_FILE_TYPE_MISMATCH
     component_owned "$LEGACY_REMOTE" JBL_WEB_REMOTE_REV1 &&
-    component_owned "$LEGACY_SSH" JBL_LOCAL_SSH_REV1 &&
-    component_owned "$LEGACY_STANDARD" JBL_STANDARD_HOOK_REV6 || return 1
+    component_owned "$LEGACY_SSH" JBL_LOCAL_SSH_REV1 || return 1
+    # The public v0.1.0 release is rev5. It differs from rev6 only in run.sh and
+    # once.sh (longer polling delays and log labels); every other file and the
+    # resulting hook chain are byte-identical, so the remaining pins are shared.
+    if component_owned "$LEGACY_STANDARD" JBL_STANDARD_HOOK_REV6; then
+        LEGACY_STANDARD_REVISION=rev6
+        legacy_run=aaa5af3e5457b715a8aad018a258fe4841f2a35076a4952b8b3993299d035b00
+        legacy_once=cde5aaf6f67a7c52cc237476b141c59e8e0286405ae977f481162c145be5bace
+    elif component_owned "$LEGACY_STANDARD" JBL_STANDARD_HOOK_REV5; then
+        LEGACY_STANDARD_REVISION=rev5
+        legacy_run=99615997df7979413ea6dd3016aef96de0388a72ee26727ebb9d7c96373a2d8f
+        legacy_once=8f3c3895195ba90f57ed5650f16e82a0d83d9b4d483cbd9550484114377f4b67
+    else
+        return 1
+    fi
     for legacy_dir in "$LEGACY_REMOTE" "$LEGACY_SSH" "$LEGACY_STANDARD"; do
         [ ! -e "$legacy_dir/TOOLKIT" ] && [ ! -L "$legacy_dir/TOOLKIT" ] || return 1
         legacy_tree "$legacy_dir" || return 1
@@ -54,10 +67,10 @@ legacy_check() {
     esac
     regular "$LEGACY_SSH/host_ed25519" && regular "$LEGACY_SSH/host_ed25519.pub" || return 1
     LEGACY_REASON=LEGACY_SMART_MODE_IDENTITY_MISMATCH
-    legacy_hash "$LEGACY_STANDARD/run.sh" aaa5af3e5457b715a8aad018a258fe4841f2a35076a4952b8b3993299d035b00 &&
+    legacy_hash "$LEGACY_STANDARD/run.sh" "$legacy_run" &&
     legacy_hash "$LEGACY_STANDARD/helper.sh" ca1d2dd6d7b8ccc1590946432d04334d5a8f88c2320acbae447967d0a43a8644 &&
     legacy_hash "$LEGACY_STANDARD/controller.sh" 3a166012981c6ab5bac8372e7a34e2df4a10ba6b8dc7a61ba6a68a9c07c79176 &&
-    legacy_hash "$LEGACY_STANDARD/once.sh" cde5aaf6f67a7c52cc237476b141c59e8e0286405ae977f481162c145be5bace &&
+    legacy_hash "$LEGACY_STANDARD/once.sh" "$legacy_once" &&
     legacy_hash "$LEGACY_STANDARD/hook.expected" 87cf62cefa6b584547f2769662295c3e84d97b30b06e8ee871e50cfceeb92581 || return 1
     LEGACY_REASON=LEGACY_HOOK_CHAIN_MISMATCH
     legacy_hash "$LEGACY_SSH/hook.before-ssh" 87cf62cefa6b584547f2769662295c3e84d97b30b06e8ee871e50cfceeb92581 &&

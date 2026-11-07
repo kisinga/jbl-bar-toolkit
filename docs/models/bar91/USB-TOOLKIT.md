@@ -154,7 +154,7 @@ Normal `install` refuses existing `/var/JBLStandard`, `/var/JBLLocalSSH` or
 `/var/JBLRemote` stores and recognizable leftover startup commands.
 
 **Install / update everything** automatically migrates one reviewed chain
-(explicit `action=migrate` is also available): rev6 Smart Mode,
+(explicit `action=migrate` is also available): rev6 Smart Mode or the public `v0.1.0` (rev5) release,
 the known prototype/portable SSH boot script and the recorded standalone remote.
 `check` writes `MIGRATION_CHECK.txt`. Even an eligible legacy chain remains a
 blocker for the advanced first-install-only action; the automatic update action
