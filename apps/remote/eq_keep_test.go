@@ -195,3 +195,24 @@ func TestEQDeferFor(t *testing.T) {
 		}
 	}
 }
+
+// A reset is confirmed by the native preset (mode 0, cache 0); a differing
+// block is only logged, and the log says when only the bass offset differs.
+func TestEQBlockDiff(t *testing.T) {
+	a := make([]byte, eqBlockSize)
+	b := append([]byte(nil), a...)
+	if n, only := eqBlockDiff(a, b); n != 0 || only {
+		t.Fatalf("identical: %d %v", n, only)
+	}
+	b[0xdac], b[0xdaf] = 1, 2
+	if n, only := eqBlockDiff(a, b); n != 2 || !only {
+		t.Fatalf("bass offset only: %d %v", n, only)
+	}
+	b[0x10] = 3
+	if n, only := eqBlockDiff(a, b); n != 3 || only {
+		t.Fatalf("other bytes: %d %v", n, only)
+	}
+	if n, only := eqBlockDiff(a, b[:10]); n != eqBlockSize || only {
+		t.Fatalf("length mismatch: %d %v", n, only)
+	}
+}

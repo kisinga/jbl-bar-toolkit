@@ -5,7 +5,7 @@ const format = db => (db > 0 ? '+' : '') + db.toFixed(1) + ' dB';
 // its own sentence replaces the generic waiting one.
 const reasons = {
   WAITING_FOR_STANDARD_PLAYBACK: '',
-  WAITING_FOR_FRONT_EQ: 'Paused while a Front EQ is applied. Reset the Front EQ to use the bass offset.',
+  WAITING_FOR_FRONT_EQ: 'Paused while a Front EQ is applied. Turn off the Front EQ to use the bass offset.',
   WAITING_FOR_CALIBRATION: 'Paused during surround calibration.',
   WAITING_FOR_NATIVE_CONTROLS: 'Waiting for the current control to finish.',
   WAITING_FOR_AUDIO_ROUTE: 'Waiting for audio playback.',

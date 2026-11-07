@@ -135,7 +135,7 @@ rear speaker calibration and subwoofer pairing.
 
 Default setup packages include the project-owned Front EQ and Bluetooth playback
 helpers. Controls remain subject to device, firmware and audio-route checks. Front EQ is
-limited to supported Standard playback routes and is kept until Reset. System monitor shows device health
+limited to supported Standard playback routes and is kept until turned off. System monitor shows device health
 and network information when available. [Feature and setup details](docs/models/bar91/USB-TOOLKIT.md).
 
 To use the same controls from Home Assistant, install the separate

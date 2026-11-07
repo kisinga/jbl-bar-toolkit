@@ -126,6 +126,17 @@ func (d *device) followFrontEQ(ctx context.Context, report func(string)) {
 	if !eqFollowRetry(decision, m.followBlocked, key) {
 		return
 	}
+	// Turned off while it could not be reset: finish once the route allows it.
+	if m.offPending && decision != eqFollowSmart && readErr == nil {
+		report("eq_reset")
+		if e := d.resetFrontEQ(ctx); e != nil {
+			m.problem, m.followBlocked = eqPendingProblem(e, d.readHPPMode), key
+			m.note("Front EQ turn-off pending: %v", e)
+			return
+		}
+		m.note("Front EQ turned off: original tuning restored")
+		return
+	}
 	switch decision {
 	case eqFollowOK:
 		return
@@ -187,6 +198,48 @@ func (d *device) eqDeferReason() string {
 		_, routeErr = d.readEQNative()
 	}
 	return eqDeferFor(m.problem, s.Available, s.Power, s.Mode, m.active, routeErr)
+}
+
+// eqBlockDiff counts the bytes that differ between two native blocks and
+// reports whether they all lie in the bass offset gain (0xdac..0xdb0).
+func eqBlockDiff(a, b []byte) (count int, offsetOnly bool) {
+	if len(a) != len(b) {
+		return max(len(a), len(b)), false
+	}
+	offsetOnly = true
+	for i := range a {
+		if a[i] != b[i] {
+			count++
+			if i < 0xdac || i >= 0xdb0 {
+				offsetOnly = false
+			}
+		}
+	}
+	return count, offsetOnly && count > 0
+}
+
+// turnOffFrontEQ removes the EQ now when the bar allows it. In standby, Smart
+// Mode or on another route it cannot be reset yet: it is marked off and the
+// monitor removes it once Standard audio plays, so turning off never fails
+// for "not now". Callers hold d.mu and have forgotten the kept EQ.
+func (d *device) turnOffFrontEQ(ctx context.Context) error {
+	m := &d.eq
+	if !m.recoveryChecked {
+		d.recoverFrontEQ(ctx)
+	}
+	if !m.active && !m.needsReset {
+		return nil
+	}
+	s := d.snapshotCurrent()
+	if s.Available && s.Power == "On" && s.Mode == "Standard" {
+		e := d.resetFrontEQ(ctx)
+		if e == nil || !errors.Is(e, errEQRoute) {
+			return e
+		}
+	}
+	m.offPending = true
+	m.note("Front EQ turned off; the bar returns to its original tuning once Standard audio plays")
+	return nil
 }
 
 // eqFollowRetry reports whether the monitor acts on decision: a reset is not

@@ -31,7 +31,10 @@ export function createEqualizer(root) {
     const keeps = typeof eq.kept === 'boolean' && eq.error !== 'EQ support is not installed';
     const applyNow = awake && eq.available === true;
     const saveLater = !applyNow && keeps;
-    const canAdjust = ready && (applyNow || saveLater) && valid && !pending && eq.status !== 'reset_required';
+    const canAdjust = ready && (applyNow || saveLater) && valid && !pending;
+    // Original (all bands at 0 dB) over an applied or kept EQ turns it off:
+    // the server resets and forgets it. There is no separate Reset button.
+    const turnOff = draftValid && eqDraft.every(value => value === 0) && (eq.enabled === true || eq.kept === true);
     $('eq-preset').disabled = !canAdjust;
     $('eq-preset').value = draftValid ? Object.keys(eqPresets).find(name => eqPresets[name].every((value, index) => value === eqDraft[index])) || 'custom' : 'custom';
     for (const [index, input] of eqSliders.entries()) {
@@ -41,16 +44,27 @@ export function createEqualizer(root) {
       $('eq-gain-' + index).textContent = draftValid ? eqGain(eqDraft[index]) : '—';
     }
     $('eq-apply').disabled = !canAdjust || !changed;
-    $('eq-apply').textContent = active === 'eq_apply' ? (saveLater ? 'Saving…' : 'Applying…') : saveLater ? 'Save EQ' : 'Apply EQ';
-    // Reset also forgets a kept EQ while the bar is in standby.
-    const forgetOnly = eq.kept === true && eq.enabled !== true && eq.status !== 'reset_required';
-    $('eq-reset').disabled = !ready || (!awake && !forgetOnly) || pending || !(eq.enabled === true || eq.status === 'reset_required' || eq.kept === true);
-    $('eq-reset').textContent = active === 'eq_reset' ? 'Resetting…' : 'Reset';
-    $('eq-panel').dataset.state = !ready ? 'offline' : eq.status === 'reset_required' ? 'reset-required' : saveLater && valid ? (changed ? 'draft' : 'waiting') : !eq.available || !valid ? 'unavailable' : changed ? 'draft' : eq.enabled ? 'custom' : 'original';
+    $('eq-apply').textContent = active === 'eq_apply' || active === 'eq_reset' ? (turnOff || active === 'eq_reset' ? 'Turning off…' : saveLater ? 'Saving…' : 'Applying…') : turnOff && changed ? 'Turn off EQ' : saveLater ? 'Save EQ' : 'Apply EQ';
+    $('eq-panel').dataset.state = !ready ? 'offline' : eq.status === 'updating' ? 'updating' : saveLater && valid ? (changed ? 'draft' : 'waiting') : !eq.available || !valid ? 'unavailable' : changed ? 'draft' : eq.enabled ? 'custom' : 'original';
     // A saved non-zero bass offset does not run while an EQ is applied.
     const offsetPaused = s.bass_offset?.error === 'WAITING_FOR_FRONT_EQ' && s.bass_offset.offset_db !== 0 ? ' Bass offset paused meanwhile.' : '';
     const notNow = !awake ? (s.power === 'Standby' ? 'The bar is in standby.' : 'Power state is unavailable.') : s.mode === 'Smart' ? 'Smart Mode is on.' : 'The EQ does not apply on this audio route.';
-    $('eq-state').textContent = !online ? 'Offline. Reconnect to adjust EQ.' : !ready ? 'Waiting for the soundbar.' : saveLater && eq.status !== 'reset_required' ? (active === 'eq_apply' ? 'Saving your settings…' : changed ? 'Unsaved changes. Select Save EQ: it is applied when Standard audio plays.' : eq.status === 'waiting' && eq.error ? eq.error : notNow + ' Choose an EQ now: it is applied when Standard audio plays.') : !awake ? (s.power === 'Standby' ? 'Turn on the bar to adjust EQ.' : 'Power state is unavailable.') : eq.status === 'reset_required' ? 'Reset required before making further changes.' : eq.error ? eq.error : !eq.available || !valid ? 'EQ is unavailable on this firmware or audio path.' : active === 'eq_apply' ? 'Applying your settings…' : active === 'eq_reset' ? 'Restoring original processing…' : changed ? 'Unapplied changes. Select Apply EQ to listen.' : eq.enabled ? (eq.kept ? 'Custom EQ active. It stays through sound, input and power changes until Reset.' : 'Custom EQ active. Reset restores original processing.') + offsetPaused : 'Original tuning. Adjust a band, then apply.';
+    // Status at a glance: is the EQ heard now, waiting to apply, or off?
+    // "Active" needs the native confirmation (status "active"): eq.enabled
+    // alone stays true while the bar is in Smart Mode or on another route,
+    // where the applied EQ is not heard and is applied again afterwards.
+    const badge = $('eq-badge');
+    const shown = ready && valid && eq.error !== 'EQ support is not installed';
+    const confirmed = eq.status === 'active' || (eq.enabled === true && eq.status === undefined);
+    // "updating": the bar changed its processing and the remote follows it
+    // within seconds. There is no "reset needed" state for the owner.
+    const kind = eq.status === 'updating' ? 'updating' : eq.enabled === true ? (confirmed ? 'active' : 'waiting') : eq.status === 'waiting' ? 'waiting' : 'off';
+    badge.hidden = !shown;
+    badge.dataset.state = kind;
+    badge.textContent = {active: 'Active', waiting: 'Waiting', off: 'Off', updating: 'Updating'}[kind];
+    badge.title = {active: 'Your EQ is applied and heard now.', waiting: notNow + ' Your EQ is applied when Standard audio plays.', off: 'Original tuning: no EQ is applied.', updating: 'The bar changed its sound processing; your EQ is updated automatically.'}[kind];
+    badge.setAttribute('aria-label', 'Front EQ status: ' + badge.textContent + '. ' + badge.title);
+    $('eq-state').textContent = !online ? 'Offline. Reconnect to adjust EQ.' : !ready ? 'Waiting for the soundbar.' : saveLater ? (active === 'eq_apply' ? 'Saving your settings…' : changed ? (turnOff ? 'Select Turn off EQ to keep the original sound.' : 'Unsaved changes. Select Save EQ: it is applied when Standard audio plays.') : eq.status === 'waiting' && eq.error ? eq.error : notNow + ' Choose an EQ now: it is applied when Standard audio plays.') : !awake ? (s.power === 'Standby' ? 'Turn on the bar to adjust EQ.' : 'Power state is unavailable.') : eq.error ? eq.error : !eq.available || !valid ? 'EQ is unavailable on this firmware or audio path.' : active === 'eq_apply' ? 'Applying your settings…' : active === 'eq_reset' ? 'Restoring original processing…' : changed ? (turnOff ? 'Select Turn off EQ to restore the original sound.' : 'Unapplied changes. Select Apply EQ to listen.') : eq.enabled ? (eq.kept ? 'Custom EQ active. It stays through sound, input and power changes. Choose Original to turn it off.' : 'Custom EQ active. Choose Original to turn it off.') + offsetPaused : 'Original tuning. Adjust a band, then apply.';
     $('eq-graph').hidden = !draftValid;
     if (draftValid) {
       const frequencies = Array.isArray(eq.frequencies_hz) && eq.frequencies_hz.length === 5 && eq.frequencies_hz.every(value => Number.isFinite(value) && value > 0) ? eq.frequencies_hz : [125,500,2000,4000,8000];

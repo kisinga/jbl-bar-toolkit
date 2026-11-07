@@ -78,7 +78,7 @@ try {
   check((await page.locator('#bass-offset-state').textContent()).includes('paused'),'pause and reason are visible');
   state.extensions['fixture.bass']={offset_db:-1.5,status:'waiting',error:'WAITING_FOR_FRONT_EQ'};
   await page.waitForFunction(()=>document.querySelector('#bass-offset-state').textContent.includes('Front EQ'));
-  check((await page.locator('#bass-offset-state').textContent())==='-1.5 dB set. Saved for startup. Paused while a Front EQ is applied. Reset the Front EQ to use the bass offset.','Front EQ pause explained in words, without the generic wait');
+  check((await page.locator('#bass-offset-state').textContent())==='-1.5 dB set. Saved for startup. Paused while a Front EQ is applied. Turn off the Front EQ to use the bass offset.','Front EQ pause explained in words, without the generic wait');
   state.extensions['fixture.bass']={offset_db:-1.5,status:'waiting',error:'WAITING_FOR_STANDARD_PLAYBACK'};
   await page.waitForFunction(()=>!document.querySelector('#bass-offset-state').textContent.includes('Front EQ'));
   check(!(await page.locator('#bass-offset-state').textContent()).includes('WAITING_FOR'),'wait codes never shown raw');

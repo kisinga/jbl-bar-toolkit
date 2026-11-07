@@ -96,6 +96,10 @@ type eqController struct {
 	// followBlocked is the native state on which the monitor's last reset
 	// failed: it is not retried (nor reported) until that state changes.
 	followBlocked string
+	// offPending: the owner turned the EQ off while it could not be reset
+	// (standby, Smart Mode, another route). It is reported off, and the
+	// monitor removes it once the bar plays Standard audio again.
+	offPending bool
 }
 
 func eqDigest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
@@ -228,14 +232,23 @@ func (m *eqController) prepare(ctx context.Context, block []byte) error {
 func (d *device) frontEQStatus(s state) *frontEQState {
 	out := d.frontEQStatusNative(s)
 	m := &d.eq
+	if m.offPending {
+		// Turned off by the owner; the native cleanup follows automatically.
+		out.Enabled, out.Gains = false, make([]float64, 5)
+		if out.Status != "unavailable" {
+			out.Status = "ready"
+		}
+		out.Error = ""
+		if m.problem != "" {
+			out.Error = m.problem
+		}
+	}
 	if m.keep {
 		out.Kept = true
 		if !m.active {
 			// Show the kept EQ while it waits to be applied again.
 			out.Gains = append([]float64(nil), m.kept[:]...)
-			if out.Status != "reset_required" {
-				out.Status, out.Error = "waiting", eqKeepWaiting
-			}
+			out.Status, out.Error = "waiting", eqKeepWaiting
 		}
 	}
 	return out
@@ -250,7 +263,8 @@ func (d *device) frontEQStatusNative(s state) *frontEQState {
 	if !s.Available || s.Power != "On" {
 		out.Error = "Turn on the bar and start audio to adjust EQ"
 		if m.active {
-			out.Status = "reset_required"
+			// The EQ is handled again after wake: nothing for the owner to do.
+			out.Status = "waiting"
 		}
 		return out
 	}
@@ -271,8 +285,9 @@ func (d *device) frontEQStatusNative(s state) *frontEQState {
 	out.Status = "ready"
 	if m.active {
 		if n.Mode != 5 || !bytes.Equal(n.Block, m.expected) || n.outer != m.native.outer || n.SampleRate != m.native.SampleRate {
-			out.Status = "reset_required"
-			out.Error = "Audio route changed; reset EQ before adjusting"
+			// The monitor follows, cleans up or applies it again within seconds.
+			out.Status = "updating"
+			out.Error = "The bar changed its sound processing; your EQ is updated automatically"
 		} else {
 			out.Status = "active"
 		}
@@ -280,8 +295,10 @@ func (d *device) frontEQStatusNative(s state) *frontEQState {
 		out.Available = false
 		out.Error = "Restore the native sound preset before using Front EQ"
 	}
-	if m.needsReset {
-		out.Status = "reset_required"
+	if m.needsReset && out.Status != "active" {
+		// A cleanup that could not finish is retried once the native state
+		// changes; Apply and Turn off also start with it.
+		out.Status = "waiting"
 	}
 	if m.problem != "" {
 		out.Available = false
@@ -341,15 +358,23 @@ func (d *device) resetFrontEQ(ctx context.Context) (err error) {
 	if lv, ok := d.eqLevels(); ok && m.levelsKnown && lv != m.levels {
 		comparable = false
 	}
+	// Mode 0 and cache 0, stable for a second, confirm the firmware's own
+	// preset. A block that still differs from the saved baseline does not
+	// block the reset any more: the bass offset writes the same block, and a
+	// refusal left the owner stuck with "Reset required". It is logged.
 	if comparable && len(m.baseline) == eqBlockSize && !bytes.Equal(n.Block, m.baseline) {
-		m.needsReset = true
-		return errors.New("native preset returned, but tuning differs from the saved baseline")
+		count, offsetOnly := eqBlockDiff(m.baseline, n.Block)
+		if offsetOnly {
+			m.note("Front EQ reset: native preset confirmed; only the bass offset gain differs from the saved baseline")
+		} else {
+			m.note("Front EQ reset: native preset confirmed; %d bytes differ from the saved baseline", count)
+		}
 	}
 	m.active, m.needsReset = false, false
 	m.baselineStale, m.levelsKnown = false, false
 	m.gains = [5]float64{}
 	m.expected = nil
-	m.problem, m.followBlocked = "", ""
+	m.problem, m.followBlocked, m.offPending = "", "", false
 	_ = os.Remove(eqRecoveryPath)
 	_ = os.Remove(eqBackupPath)
 	if m.directory != "" {
@@ -379,16 +404,19 @@ func (d *device) applyFrontEQ(ctx context.Context, gains [5]float64) (err error)
 	if controlBusy() || !d.idleKeys() {
 		return errors.New("sound controls are busy; retry shortly")
 	}
-	// A new EQ on top of one the firmware recomputed for other levels starts
-	// from the native preset of the current levels.
-	if m.active && m.baselineStale {
-		if e := d.resetFrontEQ(ctx); e != nil {
-			return e
-		}
-	}
+	// A new EQ on top of one the firmware recomputed for other levels, or
+	// changed by itself, starts from the native preset of the current levels.
 	n, e := d.readEQNative()
 	if e != nil {
 		return e
+	}
+	if m.active && (m.baselineStale || n.Mode != 5 || n.outer != m.native.outer || !bytes.Equal(n.Block, m.expected)) {
+		if e = d.resetFrontEQ(ctx); e != nil {
+			return e
+		}
+		if n, e = d.readEQNative(); e != nil {
+			return e
+		}
 	}
 	if m.active {
 		if n.Mode != 5 || n.outer != m.native.outer || !bytes.Equal(n.Block, m.expected) {
@@ -502,8 +530,12 @@ func (d *device) eqAction(ctx context.Context, action string, gains []float64) (
 		} else {
 			// Reset forgets the kept EQ, even while it waits to be applied again.
 			d.forgetKeptFrontEQ()
-			e = d.resetFrontEQ(ctx)
+			e = d.turnOffFrontEQ(ctx)
 		}
+	} else if action == "eq_apply" && len(gains) == 5 && [5]float64(gains) == [5]float64{} {
+		// Original turns the EQ off, like Reset.
+		d.forgetKeptFrontEQ()
+		e = d.turnOffFrontEQ(ctx)
 	} else if action == "eq_apply" && len(gains) == 5 {
 		var bands [5]float64
 		copy(bands[:], gains)
@@ -516,10 +548,7 @@ func (d *device) eqAction(ctx context.Context, action string, gains []float64) (
 			d.eq.note("Front EQ saved (%s); it is applied when Standard audio plays", reason)
 			return d.snapshotCurrent(), nil
 		}
-		e = d.applyFrontEQ(ctx, bands)
-		if bands == [5]float64{} {
-			d.forgetKeptFrontEQ()
-		} else if e == nil {
+		if e = d.applyFrontEQ(ctx, bands); e == nil {
 			d.keepFrontEQGains(bands)
 		}
 	} else {

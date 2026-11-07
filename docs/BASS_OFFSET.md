@@ -128,7 +128,7 @@ While waiting it is a code, which the page states in words:
 | `error` | Meaning |
 | --- | --- |
 | `WAITING_FOR_STANDARD_PLAYBACK` | the bar is off, in Smart Mode, or not playing |
-| `WAITING_FOR_FRONT_EQ` | a Front EQ is applied (or its reset is pending); Reset the Front EQ to use the offset |
+| `WAITING_FOR_FRONT_EQ` | a Front EQ is applied (or its reset is pending); turn off the Front EQ (Original) to use the offset |
 | `WAITING_FOR_CALIBRATION` | surround calibration is running |
 | `WAITING_FOR_NATIVE_CONTROLS` | a key or a control is in progress |
 | `WAITING_FOR_AUDIO_ROUTE` | the audio route cannot be read yet |
