@@ -24,7 +24,9 @@ With toolkit SSH already enabled, use **Network update (SSH)** and enter your SS
 password—no USB is needed. Otherwise, choose **USB setup** and **Install / update everything**. It detects
 your setup, updates toolkit components while keeping installed settings and SSH
 keys, or migrates the recognized older standalone setup. Unknown installations
-stop with an explanation. [Existing installation guide](models/bar91/README.md).
+stop with an explanation. The public `v0.1.0` Smart Mode release is not migrated
+automatically: remove it with its own recovery files, **restart the bar**, then
+install. [Existing installation guide](models/bar91/README.md).
 
 ## Get started
 
@@ -45,9 +47,11 @@ stop with an explanation. [Existing installation guide](models/bar91/README.md).
    setup, and open **Soundbar check results**. Continue only if `STATUS.txt`
    says `CHECK_PASSED_READY_FOR_INSTALL_OR_CONFIGURE`.
 4. **Install.** Choose **Install / update everything** and prepare the same USB
-   again, with formatting off. After successful eject, insert it into the awake
-   bar, and wait five minutes. Read the results afterward; expect
-   `INSTALLED_PENDING_REBOOT_TEST`.
+   again, with formatting off. After successful eject, copy everything on the USB
+   to a folder on your computer; a retry after a failure needs this exact package.
+   Insert it into the awake bar, and wait five minutes. Read the results afterward;
+   expect `INSTALLED_PENDING_REBOOT_TEST`. If it fails, see
+   [If an installation fails](docs/models/bar91/USB-TOOLKIT.md#if-an-installation-fails).
 5. **Use your remote.** Remove the USB and open **[jbl.local](http://jbl.local)**.
    Unplug the bar from power for **60 seconds**, reconnect it, let it finish
    starting, and turn it on. Keep the USB out. Check the browser remote and
