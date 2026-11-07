@@ -215,7 +215,7 @@ func main() {
                 'preflight_all() { preflight; fixture_result=$?; probe_native awake; PREFLIGHT_NATIVE_RESULT=passed; printf "FIXTURE=isolated-native-boundary\\n" > "$USB/PREFLIGHT.txt"; return "$fixture_result"; }\n')
             (usb / 'files/remote').write_bytes(native_binary.read_bytes())
             # Provisioning is unrelated to the host LAN; never run native Wi-Fi.
-            (usb / 'files/ssh/wifi.sh').write_text('exit 0\n')
+            (usb / 'files/ssh/wifi.sh').write_text('printf "WIFI_NOT_CONNECTED\\n" > "$JBL_SSH_USB/WIFI_STATUS.txt"; exit 1\n' if fail == 'wifi' else 'exit 0\n')
             (usb / 'files/ssh/start.sh').write_text('''#!/bin/sh
 case "$1" in --managed|--managed-network-update) ;; *) exit 1;; esac
 [ "$1" != --managed-network-update ] || [ ! -e "$JBL_SSH_STORE/BOOT_DISABLED" ] || exit 1
@@ -363,6 +363,7 @@ exit 0
                     'integrity': 'PACKAGE_INTEGRITY_FAILED',
                     'preflight': 'PREFLIGHT_FAILED_CHECK_FIRMWARE_STORAGE_AND_NATIVE_SSH',
                     'ssh': 'SSH_INSTALL_FAILED',
+                    'wifi': 'WIFI_SETUP_INCOMPLETE',
                     'publish': 'STORE_PUBLISH_FAILED',
                     'publish_race': 'STORE_PUBLISH_FAILED',
                 }.get(fail)
@@ -378,6 +379,12 @@ exit 0
                         assert not list(store.parent.glob('JBLToolkit.stage.*'))
                     elif fail == 'ssh':
                         assert (store / 'DISABLED').exists()
+                    elif fail == 'wifi':
+                        # The status file lives on the bar; the USB log must name the reason.
+                        assert (store / 'DISABLED').exists()
+                        log = (usb / 'setup.log').read_text()
+                        assert 'WIFI_REASON=WIFI_NOT_CONNECTED WIFI_EXIT=1' in log, log
+                        assert (usb / 'WIFI_STATUS.txt').read_text() == 'WIFI_NOT_CONNECTED\n'
                     else:
                         assert not store.exists()
                     passed(label)
@@ -605,6 +612,7 @@ exit 0
     scenario('integrity_failure_before_mutation', fail='integrity')
     scenario('preflight_failure_before_mutation', fail='preflight')
     scenario('ssh_failure_disables_partial_install', fail='ssh', config=CONFIG)
+    scenario('wifi_failure_reports_reason_on_usb', fail='wifi', config=CONFIG)
     scenario('standalone_install_preserved', existing='ssh')
     scenario('unsafe_hook_preserved', existing='hook_symlink')
     scenario('atomic_manager_publish_failure_preserves_original_hook', fail='publish')

@@ -191,7 +191,8 @@ Read `JBLToolkit/STATUS.txt` and the newest `RESULT=... EXIT=...` entry in `setu
 | `MIGRATION_SSH_CREDENTIALS_REQUIRED_NO_CHANGES` | Migration with SSH selected needs your config/bundled hash before any legacy service is disabled. |
 | `TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER` | A prior failure/recovery disabled startup. Read logs, then explicitly configure or recover. Passive reinsertion does not clear the guard. |
 | `REMOTE_NOT_READY` / `REMOTE_EXITED_DURING_STARTUP` | Read `setup.log` and retained `/var/JBLRemote/remote.log`. Startup is disabled on failure. |
-| `SSH_INSTALL_FAILED` / `WIFI_SETUP_INCOMPLETE` | Inspect `setup.log` and retained SSH staging logs; do not treat a listening socket as a successful login. Wi-Fi changes may already have occurred. |
+| `SSH_INSTALL_FAILED` | Inspect `setup.log` and retained SSH staging logs; do not treat a listening socket as a successful login. Wi-Fi changes may already have occurred. |
+| `WIFI_SETUP_INCOMPLETE` | The bar did not join the configured network within 130 seconds. `setup.log` and `JBLToolkit/WIFI_STATUS.txt` name the reason: `WIFI_NOT_CONNECTED` usually means a wrong passphrase, a 5 GHz-only or hidden network, or a network out of range; `INVALID_SSID`/`INVALID_PSK` mean the prepared values were rejected; other codes point to the bar's Wi-Fi service. `WIFI_EXIT=143` means the step timed out. Correct the network in the setup app and choose **Apply configuration changes** (`action=configure`) for the same USB, without formatting. |
 | `STARTUP_HOOK_CHANGED_PRESERVED` / `HOOK_CHANGED_BEFORE_COMMIT` | Another installer/manual change modified the hook. Preserve it; review before retrying. |
 | `RECOVERY_INCOMPLETE_READ_LOG` | A process did not stop or hook ownership did not match. Future toolkit startup is disabled; retain files and review logs, then reboot if needed. |
 
