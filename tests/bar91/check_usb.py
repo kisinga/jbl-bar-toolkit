@@ -866,6 +866,49 @@ for mode in ('valid', 'permissions', 'symlink', 'bad_name', 'not_owned'):
         assert (result.returncode == 0) == (mode == 'valid'), (mode, result.stderr)
         passed('network_staging_' + mode)
 
+# A standalone sshd from a removed or moved-aside installation keeps port 2222
+# until the bar restarts. Only the sshd recorded by the SSH store (legacy
+# migration source or the toolkit's own listener) may hold the port.
+LISTEN_2222 = '   0: 00000000:08AE 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1 1 0000000000000000 100 0 0 10 0\n'
+LISTEN_22 = '   1: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 2 1 0000000000000000 100 0 0 10 0\n'
+CONNECTED_2222 = '   2: 0D01A8C0:08AE 0501A8C0:D431 01 00000000:00000000 00:00000000 00000000     0        0 3 1 0000000000000000 20 4 30 10 -1\n'
+PEER_2222 = '   3: 0D01A8C0:D431 0501A8C0:08AE 01 00000000:00000000 00:00000000 00000000     0        0 4 1 0000000000000000 20 4 30 10 -1\n'
+LISTEN6_2222 = '   0: 00000000000000000000000000000000:08AE 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 5 1 0000000000000000 100 0 0 10 0\n'
+TCP_HEADER = '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n'
+port_cases = {
+    'free': ([LISTEN_22], [], 'true', 'unowned', None),
+    'listener_unowned': ([LISTEN_22, LISTEN_2222], [], 'true', 'unowned', 'SSH_PORT_2222_IN_USE_RESTART_BAR_FIRST'),
+    'listener_unowned_ipv6': ([LISTEN_22], [LISTEN6_2222], 'true', 'unowned', 'SSH_PORT_2222_IN_USE_RESTART_BAR_FIRST'),
+    'listener_owned_by_store': ([LISTEN_2222], [LISTEN6_2222], 'true', 'owned', None),
+    'connected_session_only': ([CONNECTED_2222], [], 'true', 'unowned', None),
+    'outgoing_peer_port_only': ([PEER_2222], [], 'true', 'unowned', None),
+    'state_unreadable': (None, None, 'true', 'unowned', 'SSH_PORT_STATE_UNREADABLE'),
+    'ssh_not_selected': ([LISTEN_2222], [], 'false', 'unowned', None),
+}
+for label, (tcp, tcp6, ssh, owner, reason) in port_cases.items():
+    with tempfile.TemporaryDirectory(prefix='jbl-ssh-port-') as temp:
+        folder = Path(temp); net = folder / 'net'; net.mkdir()
+        if tcp is not None:
+            (net / 'tcp').write_text(TCP_HEADER + ''.join(tcp))
+            (net / 'tcp6').write_text(TCP_HEADER + ''.join(tcp6))
+        (folder / 'files/ssh').mkdir(parents=True)
+        (folder / 'files/ssh/common.sh').write_text('verify_tools() { return 0; }\n')
+        script = folder / 'preflight.sh'
+        script.write_text((ROOT / 'models/bar91/usb/preflight.sh').read_text().replace('/proc/net/', str(net) + '/'))
+        command = ('. "$1"; regular() { [ -f "$1" ] && [ ! -L "$1" ]; }; '
+                   'process_owned() { [ "$1" = "$SSH_STORE/sshd.pid" ] && [ "$3" = ssh ] && [ "$OWNER_CASE" = owned ]; }; '
+                   'process_pid=manager_sentinel; preflight_ssh; result=$?; '
+                   '[ "$process_pid" = manager_sentinel ] || { echo "probe overwrote process_pid" >&2; exit 99; }; '
+                   'printf "%s\\n" "$PREFLIGHT_REASON"; exit "$result"')
+        env = dict(os.environ, BB=BB, USB=str(folder), SSH=ssh, SSH_PASSWORD_HASH='fixture-hash',
+                   SSH_STORE=str(folder / 'ssh-store'), OWNER_CASE=owner)
+        result = subprocess.run(['/bin/sh', '-c', command, 'fixture', str(script)], env=env, capture_output=True, timeout=10)
+        assert result.returncode != 99, (label, result.stderr)
+        assert (result.returncode == 0) == (reason is None), (label, result.stdout, result.stderr)
+        if reason is not None:
+            assert result.stdout.decode().strip() == reason, (label, result.stdout)
+        passed('ssh_port_preflight_' + label)
+
 for script in (ROOT / 'models/bar91/usb').glob('*.sh'):
     subprocess.run([BB, 'sh', '-n', str(script)], check=True)
 passed('all_device_shell_syntax')
