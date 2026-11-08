@@ -140,6 +140,8 @@ input[type=range]{height:44px}
 .right .battery{left:auto;right:0;transform:none;align-items:flex-end}
 .eq-band{gap:10px}
 .sound-row>div:first-child{flex-shrink:0}
+.setup-panel .setup-row>div:first-child{flex:1 1 auto;min-width:0}
+.setup-panel .setup-row>button{flex-shrink:0}
 .device-details dd{overflow-wrap:anywhere}
 .bass-caption{letter-spacing:.4px}
 @media(max-width:650px){

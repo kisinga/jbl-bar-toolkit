@@ -593,6 +593,11 @@ try {
   check(await page.locator('#audio-format').textContent()==='DOLBY SURROUND DD+','audio format shown in Sound');
   await page.locator('#room-setup').evaluate(el=>el.open=true);
   check(await page.locator('#calibrate').isDisabled() && (await page.locator('#calibration-value').textContent()).includes('Undock'),'calibration needs undocked rear speakers');
+  for (const width of [320,360,412]) {
+    await page.setViewportSize({width,height:900});
+    check(await page.locator('#room-setup .setup-row:not(.sound-note)').evaluateAll(rows=>rows.every(row=>{const panel=row.closest('.panel').getBoundingClientRect(),button=row.querySelector('button').getBoundingClientRect(),label=row.firstElementChild.getBoundingClientRect();return button.right<=panel.right-1 && label.right<=button.left;})),'room setup buttons stay inside their panel with a long status at '+width);
+  }
+  await page.setViewportSize({width:390,height:844});
   state.sound.rear_docked=false; await page.locator('#refresh').click(); await pause(200);
   check(!(await page.locator('#calibrate').isDisabled()) && await page.locator('#calibration-value').textContent()==='Ready','calibration ready with rear speakers undocked');
   await page.locator('#calibrate').click();
