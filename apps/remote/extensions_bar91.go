@@ -15,7 +15,8 @@ import (
 // actions. Execute and the reply-timeout policy both resolve through it.
 var bar91ActionAliases = map[string]string{
 	"eq_apply": "bar91.front-eq.apply", "eq_reset": "bar91.front-eq.reset",
-	"center_next": "bar91.center-level.next",
+	"center_next":     "bar91.center-level.next",
+	"display_message": "bar91.display-message.show", "display_cancel": "bar91.display-message.cancel",
 }
 
 // Model composition is explicit. A future family backend registers only the
@@ -25,6 +26,9 @@ func (r *remote) registerBar91Extensions() error {
 		return err
 	}
 	r.actionAliases = bar91ActionAliases
+	if err := r.registerDisplayMessage(); err != nil {
+		return err
+	}
 	eq := func(action string) extension.Handler[state] {
 		return func(ctx context.Context, data json.RawMessage) (state, error) {
 			var parameters struct {
@@ -115,4 +119,39 @@ func extensionParameters(data json.RawMessage, target any) error {
 		return errors.New("invalid extension parameters")
 	}
 	return nil
+}
+
+// registerDisplayMessage adds custom front-display messages (display_message.go).
+// Actions return at once; the manager shows the message in the background.
+func (r *remote) registerDisplayMessage() error {
+	r.display = newDisplayManager(barDisplayPort{r}, displayLog)
+	ready := func() error {
+		if r.device == nil {
+			return errors.New("native display unavailable")
+		}
+		return nil
+	}
+	return r.extensions.Register(extension.Module[state]{
+		Descriptor: extension.Descriptor{ID: "bar91.display-message", Name: "Display messages", Model: "bar91", Included: true, Experimental: true},
+		Actions: map[string]extension.Handler[state]{
+			"bar91.display-message.show": func(ctx context.Context, data json.RawMessage) (state, error) {
+				request, err := parseDisplayShow(data)
+				if err == nil {
+					err = ready()
+				}
+				if err == nil {
+					err = r.display.Show(request)
+				}
+				return r.backend.snapshot(), err
+			},
+			"bar91.display-message.cancel": func(ctx context.Context, data json.RawMessage) (state, error) {
+				id, err := parseDisplayCancel(data)
+				if err == nil {
+					r.display.Cancel(id)
+				}
+				return r.backend.snapshot(), err
+			},
+		},
+		Run: r.display.Run,
+	})
 }
