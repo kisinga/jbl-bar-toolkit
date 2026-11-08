@@ -78,6 +78,41 @@ older MediaTek player work. That example does not establish custom-text support
 or a display test on this firmware. The handler analysis above is the relevant
 evidence for the pinned build.
 
+## Memory-write route (qualified)
+
+Added 8 November 2026. Instead of calling the sender inside `bdpprog`, the
+remote performs the consumer's own writes through `/proc/<pid>/mem`, the same
+way it already reaches the bass and console fields. No code runs in the native
+process.
+
+- **Writes.** Case `0x5b` of the consumer (`0x625b86`) selects level-2 slot `1`
+  at `0xc65494+0x1c`, stores the start tick at `0xd8a114` and copies 32 bytes
+  of text to `0xd8a120`. The remote writes the text, then the tick, then the
+  selector, in that order.
+- **Tick.** `0x253434` returns `clock_gettime(CLOCK_MONOTONIC)` divided by the
+  period at `0xcf1854`, which `0x2534b8` initializes to
+  `1000 / sysconf(_SC_CLK_TCK)` (10 ms).
+- **Expiry.** The renderer `0x62260e` compares the elapsed ticks, unsigned,
+  with `length × 550 ms` and then writes `117`.
+- **Standby.** The priority function `0x624190` draws level 3 first. In
+  standby, level 3 holds `28`; its case at `0x621d6c` draws a blank screen, and
+  the module sets it about 1.7 s after `STDBY` (`0x621d48`). All 24 literal
+  references to `0xc65494` are inside the display module.
+- **On the bar** (owner's Bar 9.1, firmware 23.06.41.80):
+  - the tick matched within one second of a native VOL message;
+  - `HELLO FABIEN` stayed 6.75 s (6.6 s computed) and `LE FRIGO EST OUVERT`
+    10.58 s (10.45 s computed); the bar then showed `HDMI IN`;
+  - lower case is not displayed as lower case;
+  - in standby, with level 3 lifted to `52` for the message and set back to
+    `28`, the text was visible and the screen went black again; the TV, the
+    HDMI source and Bluetooth were not woken;
+  - repeats, blanks, waiting behind native messages, replacement by id and
+    durations were then exercised with the shell prototype.
+
+[`docs/DISPLAY_MESSAGES.md`](../docs/DISPLAY_MESSAGES.md) describes the
+resulting `bar91.display-message` extension. The installer-feedback adapter
+below can reuse this route; it is still not wired into the installer.
+
 ## Integration work
 
 Follow the [implementation guide](../docs/models/bar91/DISPLAY-FEEDBACK.md) for
@@ -163,6 +198,7 @@ retained in the private evidence directory.
 
 **Answered:** native variable-text support and a temporary-message candidate.
 **Partially answered:** external integration route.
-**Unresolved:** live screen behavior, glyph coverage, interruption/restoration
-behavior, adapter mechanism and installation integration. No emulator or
-hardware execution is claimed.
+**Resolved later (memory-write route above):** live screen behavior, standby,
+interruption and restoration, on the owner's bar.
+**Unresolved:** full glyph coverage (punctuation), and the installer-feedback
+integration (`internal/display` contract, installer stages).

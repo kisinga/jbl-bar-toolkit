@@ -109,6 +109,7 @@ type remote struct {
 	feed          stateFeed
 	stop          <-chan struct{}
 	actionMu      sync.Mutex
+	display       *displayManager
 }
 
 // This native seam preserves existing Bar 9.1 fixtures. The reusable public
