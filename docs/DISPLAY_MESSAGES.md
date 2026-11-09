@@ -15,8 +15,7 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 8 November 2026, first with a
 - **The bar comes first.** If the bar is showing something of its own, such as the volume, a pairing message, `HELLO` on wake-up or `SMART MODE OFF`, the message waits until the display has been free for one second. If that happens during a pass, the pass is shown again: a pass only counts when it was shown to its end. With a number of passes, each wait gives up after 60 s.
 - **Ids.** Each message has an id (`default` when none is given):
   - a new message with the same id replaces the old one, whether it is showing or waiting, and takes its place in line;
-  - messages with different ids are shown one after the other, never together;
-  - a long or endless message lets a waiting message through between passes, then resumes.
+  - messages with different ids take turns, pass by pass, never on screen together. Each keeps its own count, duration or forever: `HELLO` ×3 and then `GOODBYE` ×2 show `HELLO GOODBYE HELLO GOODBYE HELLO`. One that ends leaves the rotation, and one that arrives joins it.
 - **Cancel** one id, or every message.
 
 ## API
@@ -56,7 +55,7 @@ The renderer keeps the text while `(tick − start) × ms_per_tick < length × 5
 - standby: the blank screen is lifted, then restored;
 - waiting for a native message;
 - a wake-up during a pass (`HELLO`, then `SMART MODE OFF`), after which the interrupted pass is shown again;
-- replacement by id, cancellation, and the queue (an endless message lets a queued one through);
+- replacement by id, cancellation, the rotation (an endless message lets a queued one through, and two messages alternate while each keeps its own count);
 - a duration that ends after the last pass has finished;
 - a busy gate during hand-back;
 - a clock mismatch;
