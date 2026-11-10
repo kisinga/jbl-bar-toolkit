@@ -68,6 +68,13 @@ type timerManager struct {
 	root    context.Context
 	next    int
 	timers  map[string]*barTimer
+	// shows serializes the display updates of the countdowns with the
+	// transitions that replace or remove them (ringing, Cancel): a countdown
+	// decided from a snapshot must not land after the alarm or the cancel.
+	shows sync.Mutex
+	// racePoint, for tests: called between the countdowns' snapshot and their
+	// display updates.
+	racePoint func()
 	// sound plays the end-of-timer sound (timer_sound_bar91.go); nil: none.
 	// ctx ends when the timer is stopped (a key, Stop, 10 minutes).
 	sound func(ctx context.Context, o timerSoundOptions)
@@ -256,6 +263,8 @@ func (m *timerManager) Start(r timerRequest) (string, error) {
 
 // Cancel stops a timer, running or ringing.
 func (m *timerManager) Cancel(id string) error {
+	m.shows.Lock()
+	defer m.shows.Unlock()
 	m.mu.Lock()
 	t := m.timers[id]
 	if t != nil {
@@ -268,6 +277,14 @@ func (m *timerManager) Cancel(id string) error {
 	}
 	m.display.Cancel(timerDisplayID + id)
 	return nil
+}
+
+// counting reports whether t still counts down (not ringing, not removed);
+// the caller holds m.shows, so it stays so while it updates the display.
+func (m *timerManager) counting(t *barTimer) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.timers[t.ID] == t && !t.Ringing
 }
 
 // Extend adds time to a running timer (+1 min in the page). A ringing timer
@@ -327,6 +344,19 @@ func (m *timerManager) remove(t *barTimer) {
 	t.cancel()
 }
 
+// ring marks t ringing, holding m.shows until run has shown the alarm.
+func (m *timerManager) ring(t *barTimer) bool {
+	m.shows.Lock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.timers[t.ID] != t {
+		m.shows.Unlock()
+		return false
+	}
+	t.Ringing = true
+	return true
+}
+
 func (m *timerManager) run(ctx context.Context, t *barTimer) {
 	for {
 		// In steps of at most a second, so that Extend is seen.
@@ -336,16 +366,18 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 			return
 		}
 		left := t.Deadline.Sub(m.port.now())
-		if left <= 0 {
-			t.Ringing = true
-			m.mu.Unlock()
+		m.mu.Unlock()
+		if left <= 0 && m.ring(t) {
 			break
 		}
-		m.mu.Unlock()
+		if left <= 0 {
+			return // cancelled meanwhile
+		}
 		if m.port.sleep(ctx, min(left, time.Second)) != nil {
 			return // cancelled
 		}
 	}
+	defer m.shows.Unlock() // taken by ring: the alarm replaces the countdown before any other update
 	if t.Sound != timerSoundOff && m.sound != nil {
 		// In the background: the alarm text shows meanwhile (a wake-up from
 		// standby replays its pass, like any message). Stopping the timer
@@ -390,22 +422,27 @@ func (m *timerManager) countdowns(ctx context.Context) {
 			}
 		}
 		m.mu.Unlock()
+		if m.racePoint != nil {
+			m.racePoint()
+		}
 		sort.Slice(counting, func(i, j int) bool { return ends[counting[i]].Before(ends[counting[j]]) })
 		want := ""
 		if len(running) == 1 && len(counting) == 1 {
 			want = counting[0].ID
 		}
+		m.shows.Lock()
 		if live != "" && live != want {
-			// Its clock stops: still running (another timer started), or ringing
-			// or cancelled, whose alarm or cancel already replaced it.
+			// Its clock stops when the timer still runs (another timer
+			// started). A ringing or cancelled one: its alarm or cancel already
+			// replaced the clock, and a cancel now would stop the alarm.
 			for _, t := range running {
-				if t.ID == live {
+				if t.ID == live && m.counting(t) {
 					m.display.Cancel(timerDisplayID + live)
 				}
 			}
 			live = ""
 		}
-		if want != "" && live != want {
+		if want != "" && live != want && m.counting(counting[0]) {
 			t := counting[0]
 			clock := func() string { return timerClock(m.deadline(t).Sub(m.port.now())) }
 			if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: clock(), Mode: displayForever, Passes: 1,
@@ -429,7 +466,7 @@ func (m *timerManager) countdowns(ctx context.Context) {
 			if !round.IsZero() && !now.Before(round) {
 				for _, t := range counting {
 					// From about a minute left: a round lands just under a whole minute.
-					if ends[t].Sub(now) > 50*time.Second {
+					if ends[t].Sub(now) > 50*time.Second && m.counting(t) {
 						t := t
 						fresh := func() string { return timerReminder(t.Text, m.deadline(t).Sub(m.port.now())) }
 						if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: fresh(), Mode: displayPasses, Passes: 1, Hooks: &displayHooks{Fresh: fresh}}); err != nil {
@@ -442,6 +479,7 @@ func (m *timerManager) countdowns(ctx context.Context) {
 		} else {
 			round = time.Time{}
 		}
+		m.shows.Unlock()
 		if m.port.sleep(ctx, timerTick) != nil {
 			return
 		}

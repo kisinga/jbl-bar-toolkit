@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	timerSoundSetup   = 30 * time.Second // connect, launch, wake, volume, fetch (plus the ringing time)
-	timerSoundRestore = 25 * time.Second // volume, mute, then the gate to put the source back
+	timerSoundSetup    = 30 * time.Second // connect, launch, wake, volume, fetch (plus the ringing time)
+	timerSoundRestore  = 25 * time.Second // the gate, volume, mute, then the source
+	timerSoundGateWait = 10 * time.Second // another control running when a timer rings
 )
 
 // timerSoundBusy plays one sound at a time: timers ending together ring once.
@@ -56,58 +57,92 @@ func (r *remote) playTimerSound(ctx context.Context, o timerSoundOptions) {
 	}
 	// The volume is raised beside the playback, so that the Cast connection
 	// keeps answering heartbeats; the first ring may start a moment quieter.
+	// The changes to the bar (the Cast launch, which switches the source and
+	// wakes it, then the volume) run under the action gate, like any control,
+	// so that they do not interleave with an EQ or another control. The gate
+	// is released once they are done: the chime then rings without it, so the
+	// alarm on the display and the keys that stop it keep working, and Stop
+	// (the timer's ctx) never waits for the gate.
+	release, report, ok := r.holdFor(ctx, "Timer sound", timerSoundGateWait)
+	if !ok {
+		if ctx.Err() == nil {
+			displayLog("Timer sound: not played, another control kept the bar busy")
+		}
+		return
+	}
+	report("Playing the timer sound")
+	var free sync.Once
+	unhold := func() { free.Do(release) }
+	defer unhold()
 	var volume volumeChange
 	var adjusting sync.WaitGroup
 	launched := func() {
 		adjusting.Add(1)
 		go func() {
 			defer adjusting.Done()
+			defer unhold()
 			// After the launch: from standby, the bar is waking up now.
 			r.waitPowerOn(ctx, 6*time.Second)
-			volume = r.raiseVolume(ctx, o.Volume)
+			volume = r.barVolume().raise(ctx, o.Volume)
 		}()
 	}
-	if err := castPlayServed(ctx, timerChime(), "audio/wav", o.RingFor, launched); err != nil && ctx.Err() == nil {
+	err := castPlayServed(ctx, timerChime(), "audio/wav", o.RingFor, launched)
+	unhold() // the launch failed before the volume: nothing else to change
+	if err != nil && ctx.Err() == nil {
 		displayLog("Timer sound: %v", err)
 	}
 	adjusting.Wait()
-	// Put things back even when the timer was stopped (ctx ended).
+	// Put things back even when the timer was stopped (ctx ended), under the
+	// gate again: volume and mute, then the source or standby.
 	restore, cancel := context.WithTimeout(context.Background(), timerSoundRestore)
 	defer cancel()
-	r.restoreVolume(restore, volume)
-	// The bar now stays on Chromecast (and on, if it was in standby).
 	action := restoreAction(before.Input)
 	if before.Power == "Standby" {
 		action = "power"
 	} else if before.Power != "On" {
 		action = ""
 	}
-	if action == "" {
+	if volume == (volumeChange{}) && action == "" {
 		return
 	}
-	for restore.Err() == nil {
-		release, report, ok := r.hold("Timer sound")
-		if !ok {
-			time.Sleep(time.Second)
-			continue
-		}
-		now := r.device.snapshot()
-		var err error
-		switch {
-		case action == "power" && now.Power == "On":
-			report("Returning to standby after the timer sound")
-			_, err = r.device.action(restore, "power")
-		case action != "power" && now.Power == "On" && now.Input != before.Input:
-			report("Returning to " + before.Input + " after the timer sound")
-			_, err = r.device.action(restore, action)
-		}
-		release()
-		if err != nil {
-			displayLog("Timer sound: could not put the bar back (%s): %v", action, err)
-		}
+	release, report, ok = r.holdFor(restore, "Timer sound", timerSoundRestore)
+	if !ok {
+		displayLog("Timer sound: the bar was busy; it was not put back (volume, source)")
 		return
 	}
-	displayLog("Timer sound: the bar was busy; it stays on Chromecast")
+	defer release()
+	report("Putting the bar back after the timer sound")
+	r.barVolume().restore(restore, volume)
+	now := r.device.snapshot()
+	switch {
+	case action == "power" && now.Power == "On":
+		report("Returning to standby after the timer sound")
+		_, err = r.device.action(restore, "power")
+	case action != "" && action != "power" && now.Power == "On" && now.Input != before.Input:
+		report("Returning to " + before.Input + " after the timer sound")
+		_, err = r.device.action(restore, action)
+	default:
+		err = nil
+	}
+	if err != nil {
+		displayLog("Timer sound: could not put the bar back (%s): %v", action, err)
+	}
+}
+
+// holdFor takes the action gate, waiting up to limit while another control
+// runs; it gives up when ctx ends.
+func (r *remote) holdFor(ctx context.Context, action string, limit time.Duration) (func(), func(string), bool) {
+	end := time.Now().Add(limit)
+	for ctx.Err() == nil && time.Now().Before(end) {
+		if release, report, ok := r.hold(action); ok {
+			return release, report, true
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+		}
+	}
+	return nil, nil, false
 }
 
 func (r *remote) waitPowerOn(ctx context.Context, limit time.Duration) {
@@ -123,52 +158,64 @@ type volumeChange struct {
 	unmuted bool // the bar was muted
 }
 
-// raiseVolume unmutes the bar and raises its volume to at least minimum,
-// through the Cast receiver (master volume); it never lowers it.
-func (r *remote) raiseVolume(ctx context.Context, minimum int) volumeChange {
+// volumeOps changes the bar's volume through the Cast receiver (master
+// volume) and reads it back natively; tests replace both ends.
+type volumeOps struct {
+	snapshot func() state
+	control  func(context.Context, castControlRequest) (castControlResult, error)
+	settle   time.Duration // before the readback
+}
+
+func (r *remote) barVolume() volumeOps {
+	return volumeOps{snapshot: r.device.snapshot, control: castControl, settle: 600 * time.Millisecond}
+}
+
+// raise unmutes the bar and raises its volume to at least minimum; it never
+// lowers it.
+func (v volumeOps) raise(ctx context.Context, minimum int) volumeChange {
 	var change volumeChange
-	s := r.device.snapshot()
+	s := v.snapshot()
+	// What is put back is recorded before each change: a change that fails
+	// half-way, or is stopped (a key, Stop), may still have moved the bar.
 	if s.Muted != nil && *s.Muted {
+		change.unmuted = true
 		f := false
-		if _, err := castControl(ctx, castControlRequest{Action: "mute", Muted: &f}); err != nil {
+		if _, err := v.control(ctx, castControlRequest{Action: "mute", Muted: &f}); err != nil {
 			displayLog("Timer sound: could not unmute: %v", err)
-		} else {
-			change.unmuted = true
 		}
 	}
 	if s.Volume != nil && int(*s.Volume) < minimum {
 		was := int(*s.Volume)
-		if r.setBarVolume(ctx, minimum) {
-			change.volume = &was
-		}
+		change.volume = &was
+		v.set(ctx, minimum)
 	}
 	return change
 }
 
-func (r *remote) restoreVolume(ctx context.Context, change volumeChange) {
+func (v volumeOps) restore(ctx context.Context, change volumeChange) {
 	if change.volume != nil {
-		r.setBarVolume(ctx, *change.volume)
+		v.set(ctx, *change.volume)
 	}
 	if change.unmuted {
 		t := true
-		if _, err := castControl(ctx, castControlRequest{Action: "mute", Muted: &t}); err != nil {
+		if _, err := v.control(ctx, castControlRequest{Action: "mute", Muted: &t}); err != nil {
 			displayLog("Timer sound: could not mute again: %v", err)
 		}
 	}
 }
 
-// setBarVolume sets the bar's volume through the Cast receiver and checks
-// it on the native side, correcting the Cast level by a step or two.
-func (r *remote) setBarVolume(ctx context.Context, target int) bool {
+// set sets the bar's volume through the Cast receiver and checks it on the
+// native side, correcting the Cast level by a step or two.
+func (v volumeOps) set(ctx context.Context, target int) bool {
 	level := float64(target) / castVolumeSteps
 	for try := 0; try < 3 && ctx.Err() == nil; try++ {
 		l := min(max(level, 0), 1)
-		if _, err := castControl(ctx, castControlRequest{Action: "volume", Level: &l}); err != nil {
+		if _, err := v.control(ctx, castControlRequest{Action: "volume", Level: &l}); err != nil {
 			displayLog("Timer sound: volume: %v", err)
 			return false
 		}
-		time.Sleep(600 * time.Millisecond)
-		s := r.device.snapshot()
+		time.Sleep(v.settle)
+		s := v.snapshot()
 		if s.Volume == nil {
 			return false
 		}

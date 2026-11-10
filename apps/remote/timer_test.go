@@ -5,14 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 func startTimers(t *testing.T, level3 uint32) (*fakeDisplay, *displayManager, *timerManager, func()) {
 	t.Helper()
+	return startTimersWith(t, level3, nil)
+}
+
+// startTimersWith lets a test set the manager's test hooks before it runs.
+func startTimersWith(t *testing.T, level3 uint32, set func(*timerManager)) (*fakeDisplay, *displayManager, *timerManager, func()) {
+	t.Helper()
 	f, m, stop := startDisplay(t, level3)
 	tm := newTimerManager(m, f, t.Logf)
+	if set != nil {
+		set(tm)
+	}
 	ctx, cancel := contextWithCancel()
 	done := make(chan struct{})
 	go func() { tm.Run(ctx); close(done) }()
@@ -420,5 +430,76 @@ func TestTimerKeyStopsAnAlarmWaitingBehindTheBarsScreen(t *testing.T) {
 	time.Sleep(3 * time.Second / displayScale)
 	if s := f.screens(); s[len(s)-1] != "background" {
 		t.Fatalf("the alarm came back: %v", s)
+	}
+}
+
+// A countdown decided before the timer rang must not replace the alarm
+// (which would end the timer), nor show after a cancel (review of #45).
+func TestTimerCountdownDoesNotRaceTheAlarm(t *testing.T) {
+	var tm *timerManager
+	var once sync.Once
+	ready := make(chan struct{})
+	f, _, tm, stop := startTimersWith(t, vfdLevel3None, func(m *timerManager) {
+		m.racePoint = func() {
+			// The first snapshot with the timer running: hold the countdown
+			// until the timer rings.
+			m.mu.Lock()
+			n := len(m.timers)
+			m.mu.Unlock()
+			if n == 0 {
+				return
+			}
+			once.Do(func() {
+				<-ready
+				for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+					if l := tm.List(); len(l) == 1 && l[0].Ringing {
+						return
+					}
+				}
+			})
+		}
+	})
+	defer stop()
+	startTimer(t, tm, `{"text":"pizza","duration_s":1,"countdown":true}`)
+	close(ready)
+	waitScreen(t, f, "text:TIME'S UP PIZZA", 20*time.Second)
+	time.Sleep(2 * time.Second / displayScale)
+	if l := tm.List(); len(l) != 1 || !l[0].Ringing {
+		t.Fatalf("the alarm was replaced: %+v, screens %v", l, f.screens())
+	}
+	if s := f.screens(); s[len(s)-1] != "text:TIME'S UP PIZZA" {
+		t.Fatalf("screens %v", s)
+	}
+}
+
+func TestTimerCountdownDoesNotRaceTheCancel(t *testing.T) {
+	var tm *timerManager
+	var once sync.Once
+	cancelled := make(chan struct{})
+	f, m, tm, stop := startTimersWith(t, vfdLevel3None, func(m *timerManager) {
+		m.racePoint = func() {
+			m.mu.Lock()
+			n := len(m.timers)
+			m.mu.Unlock()
+			if n > 0 {
+				once.Do(func() { <-cancelled })
+			}
+		}
+	})
+	defer stop()
+	id := startTimer(t, tm, `{"text":"pizza","duration_s":60,"countdown":true}`)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		if err := tm.Cancel(id); err != nil {
+			t.Error(err)
+		}
+		close(cancelled)
+	}()
+	waitIdle(t, f, m, 10*time.Second)
+	time.Sleep(3 * time.Second / displayScale)
+	for _, s := range f.screens() {
+		if strings.HasPrefix(s, "text:0'") {
+			t.Fatalf("a countdown after the cancel: %v", f.screens())
+		}
 	}
 }

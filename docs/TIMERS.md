@@ -39,6 +39,7 @@ Recent timers and options live in the browser's storage: each device has its own
 ## Rules
 
 - **At most 8 timers.** Two timers cannot share a name, and only one may have no name: the display would not tell them apart, and the page says so.
+- **Display updates follow the timers.** The countdown loop decides from a snapshot; its updates are serialized with the transitions that replace or remove them (ringing, cancel), and it checks the timer still counts down first. So a late countdown never replaces an alarm (which would end the timer) nor shows after a cancel.
 - **The clock** is a display message whose text is rewritten in place, with no blanks between passes (display hooks `Live` and `Loop`). Like any long message, it lets other messages through between passes.
 - **Reminders** are one-pass messages under the timer's display id, their text taken when the pass starts (display hook `Fresh`): a new one replaces one that has not finished.
 - **When a timer ends**, `TIME'S UP PIZZA` scrolls in a loop, without blanks. A timer without a name shows `TIME'S UP - PRESS ANY KEY`. A name too long for both shows alone. A short text alone would not scroll, only blink between blanks, which is less striking. The alarm lasts until one of these:
@@ -58,7 +59,9 @@ Recent timers and options live in the browser's storage: each device has its own
 
   **Ringing.** The chime is loaded again each time it finishes, until the ringing time has passed. A key on the JBL remote, or Stop, ends the timer and its sound together.
 
-  **Afterwards**, the remote puts everything back, even when the sound was stopped early: volume and mute, then standby if the bar was in standby, or its source (TV, HDMI, Bluetooth). It does this under the action gate, reported as "Timer sound". Timers that end together ring once. A Chromecast or AirPlay source is left as it is.
+  **The action gate.** The changes to the bar go through the action gate, like any control, reported as "Timer sound", so they do not interleave with an EQ change or another control: first the Cast launch (which switches the source and may wake the bar) and the volume, then, afterwards, the restore. The chime rings without the gate, so the alarm on the display and the keys that stop it keep working; while the gate is held (a few seconds), keys are not watched. Stop never waits for the gate. If another control keeps the bar busy for 10 seconds when a timer ends, the sound is skipped and the alarm shows alone.
+
+  **Afterwards**, the remote puts everything back, even when the sound was stopped early: volume and mute, then standby if the bar was in standby, or its source (TV, HDMI, Bluetooth). What it puts back is recorded before each change, so a change that failed half-way, or was stopped, is undone too. Timers that end together ring once. A Chromecast or AirPlay source is left as it is.
 - **The bar's own messages come first**, like for display messages: volume, `HELLO` on wake-up and so on.
 - **`display_cancel`** without an id stops display messages, not timers.
 
@@ -100,7 +103,9 @@ The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
   - the Cast exchange with a simulated receiver: launch, heartbeat, load, played to the end, a refused load, and ringing again until the time is up;
   - the TV and restore rules;
   - the sound played once when its timer rings, and not for a timer without sound;
-  - the parameters (mode, volume, ringing time, with defaults).
+  - the parameters (mode, volume, ringing time, with defaults);
+  - the volume (`timer_volume_test.go`): raised with a correction, never lowered, and put back with the mute after a change stopped half-way.
+- races (`timer_test.go`): a countdown held until the timer rings does not replace the alarm, and one held until a cancel does not show.
 
 `tests/webremote-ui.mjs` covers the panel:
 - the folded options and what will happen, and their summaries;
