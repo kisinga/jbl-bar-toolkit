@@ -475,11 +475,43 @@ func (m *displayManager) more(job *displayJob) bool {
 func (m *displayManager) waitFree(job *displayJob) error {
 	deadline := m.budget(job)
 	free := 0
+	h := job.hooks()
+	poll := displayPoll
+	if h.StopOnKey {
+		poll = displayKeyPoll
+	}
+	// A key still down from before the wait (the press that stopped the
+	// message shown before this one) does not count.
+	job.armed = false
 	for free < displayFreeFor {
 		if !deadline.IsZero() && !m.port.now().Before(deadline) {
 			return errDisplayBusy
 		}
+		key := false
 		err := m.port.step(false, func(mem displayMem) error {
+			if h.StopOnKey {
+				// Keys count while the bar shows its own screen too: a volume
+				// key brings up the volume, which keeps the message waiting
+				// as long as keys are pressed (owner's bar, 10 Nov 2026). Not
+				// while another message of ours shows: that press is its own,
+				// and the next one, after a release, is for this message.
+				sel, e := mem.read32(vfdLevel2)
+				if e != nil {
+					return e
+				}
+				down, e := mem.keyDown()
+				if e != nil {
+					return e
+				}
+				switch {
+				case sel == vfdMessageCustom:
+					job.armed = false
+				case !down:
+					job.armed = true
+				case job.armed:
+					key = true
+				}
+			}
 			ok, e := displayFree(mem)
 			if e == nil {
 				if ok {
@@ -490,10 +522,15 @@ func (m *displayManager) waitFree(job *displayJob) error {
 			}
 			return e
 		})
-		if err != nil && err != errDisplayGate {
+		if err == errDisplayGate {
+			job.armed = false
+		} else if err != nil {
 			return err
 		}
-		if m.port.sleep(job.ctx, displayPoll) != nil {
+		if key {
+			return errDisplayKey
+		}
+		if m.port.sleep(job.ctx, poll) != nil {
 			return errDisplayStopped
 		}
 	}

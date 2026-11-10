@@ -311,6 +311,15 @@ func TestTimersRingInTurn(t *testing.T) {
 	waitScreen(t, f, "text:TIME'S UP PATES", 30*time.Second)
 	press(f) // stops the one on screen
 	waitTimers(t, f, tm, 1, 10*time.Second)
+	// The press brought up the bar's volume, and the next ones keep it up:
+	// the second alarm waits behind it, and a press still stops it.
+	f.set(vfdLevel3, 9)
+	time.Sleep(time.Second / displayScale)
+	if len(tm.List()) != 1 {
+		t.Fatal("one press stopped both alarms")
+	}
+	press(f)
+	waitTimers(t, f, tm, 0, 10*time.Second)
 }
 
 func TestTimerRemindersNameTheTimerWhenSeveralRun(t *testing.T) {
@@ -388,5 +397,28 @@ func TestTimerExtendParameters(t *testing.T) {
 		if _, _, err := parseTimerExtend(json.RawMessage(in)); err == nil {
 			t.Errorf("%s accepted", in)
 		}
+	}
+}
+
+// A volume key shows the bar's volume over the alarm, and further presses keep
+// it up: the alarm waits behind it, and those presses still stop it (owner's
+// bar, 10 Nov 2026: the second of two alarms could not be stopped).
+func TestTimerKeyStopsAnAlarmWaitingBehindTheBarsScreen(t *testing.T) {
+	f, _, tm, stop := startTimers(t, vfdLevel3None)
+	defer stop()
+	startTimer(t, tm, `{"text":"pizza","duration_s":1}`)
+	waitScreen(t, f, "text:TIME'S UP PIZZA", 20*time.Second)
+	f.set(vfdLevel3, 9) // the bar's volume screen, without a key seen
+	waitScreen(t, f, "native-l3", 10*time.Second)
+	time.Sleep(2 * time.Second / displayScale)
+	if len(tm.List()) != 1 {
+		t.Fatal("the alarm ended without a key")
+	}
+	press(f) // the volume screen stays up
+	waitTimers(t, f, tm, 0, 10*time.Second)
+	f.set(vfdLevel3, vfdLevel3None)
+	time.Sleep(3 * time.Second / displayScale)
+	if s := f.screens(); s[len(s)-1] != "background" {
+		t.Fatalf("the alarm came back: %v", s)
 	}
 }
