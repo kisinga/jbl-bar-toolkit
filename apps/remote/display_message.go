@@ -119,6 +119,9 @@ type displayHooks struct {
 	// message shows. Keep it short: a text longer than the display scrolls,
 	// and each rewrite restarts the scroll (seen on the bar, 10 Nov 2026).
 	Live func() string
+	// Fresh gives the text when a pass starts; it is not rewritten during
+	// the pass (a time left written once, which may then scroll).
+	Fresh func() string
 	// Loop shows the passes back to back, without the blank between them
 	// (a long text then scrolls continuously).
 	Loop bool
@@ -668,6 +671,9 @@ func (m *displayManager) run(job *displayJob) {
 	text := func() string {
 		if h.Live != nil {
 			return h.Live()
+		}
+		if h.Fresh != nil {
+			return h.Fresh()
 		}
 		return r.Text
 	}

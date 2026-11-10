@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -68,12 +69,12 @@ func TestTimerTexts(t *testing.T) {
 		}
 	}
 	for _, c := range []struct {
-		name    string
-		minutes int
-		want    string
-	}{{"PIZZA", 4, "4 MIN LEFT PIZZA"}, {"", 4, "4 MIN LEFT"}, {strings.Repeat("A", 25), 12, "12 MIN LEFT"}} {
-		if got := timerReminder(c.name, c.minutes); got != c.want {
-			t.Errorf("timerReminder(%q, %d) = %q, want %q", c.name, c.minutes, got, c.want)
+		name string
+		left time.Duration
+		want string
+	}{{"PIZZA", 274 * time.Second, "PIZZA 4'34"}, {"", 274 * time.Second, "4'34"}, {strings.Repeat("A", 26), 754 * time.Second, "12'34"}} {
+		if got := timerReminder(c.name, c.left); got != c.want {
+			t.Errorf("timerReminder(%q, %v) = %q, want %q", c.name, c.left, got, c.want)
 		}
 	}
 	for name, want := range map[string]string{"PIZZA": "TIME'S UP PIZZA", "": "TIME'S UP - PRESS ANY KEY", strings.Repeat("A", 25): strings.Repeat("A", 25)} {
@@ -211,15 +212,24 @@ func TestTimersSeveralShowMinuteRoundsInTurn(t *testing.T) {
 	startTimer(t, tm, `{"text":"pates","duration_s":605,"countdown":true}`)
 	waitPrefix(t, f, "text:10'0", 10*time.Second) // alone: its clock
 	startTimer(t, tm, `{"text":"lessive","duration_s":790,"countdown":true}`)
-	// Rounds follow PATES, the first to end: at 10 min left, both in turn.
-	waitScreen(t, f, "text:10 MIN LEFT PATES", time.Minute)
-	waitScreen(t, f, "text:13 MIN LEFT LESSIVE", 30*time.Second)
-	waitScreen(t, f, "text:9 MIN LEFT PATES", 2*time.Minute)
-	waitScreen(t, f, "text:12 MIN LEFT LESSIVE", 30*time.Second)
+	// Rounds follow PATES, the first to end: at 10 min left, both in turn,
+	// each with its time when its pass starts (LESSIVE about 7 s later).
+	waitPrefix(t, f, "text:PATES 9'5", time.Minute) // 10 min left, when its pass starts
+	waitPrefix(t, f, "text:LESSIVE 1", 30*time.Second)
+	waitPrefix(t, f, "text:PATES 8'5", 2*time.Minute)
+	waitPrefix(t, f, "text:LESSIVE 1", 30*time.Second)
 	rounds := false
 	for _, s := range screensOf(f) {
-		rounds = rounds || strings.Contains(s, "MIN LEFT")
-		if rounds && strings.Contains(s, "'") {
+		if strings.HasPrefix(s, "LESSIVE ") {
+			var m, sec int
+			fmt.Sscanf(strings.TrimPrefix(s, "LESSIVE "), "%d'%d", &m, &sec)
+			// 790 s - 5 s at the first round: a stale time would read 13'05.
+			if left := m*60 + sec; left > 780 {
+				t.Fatalf("LESSIVE time taken before its pass: %s", s)
+			}
+		}
+		rounds = rounds || strings.HasPrefix(s, "PATES ")
+		if rounds && !strings.Contains(s, " ") {
 			t.Fatalf("the clock came back with two timers: %v", screensOf(f))
 		}
 	}
@@ -303,8 +313,8 @@ func TestTimerRemindersNameTheTimerWhenSeveralRun(t *testing.T) {
 	defer stop()
 	startTimer(t, tm, `{"text":"pates","duration_s":125,"countdown":true}`)
 	startTimer(t, tm, `{"text":"lessive","duration_s":600}`)
-	waitScreen(t, f, "text:2 MIN LEFT PATES", 2*time.Minute)
-	waitScreen(t, f, "text:1 MIN LEFT PATES", 2*time.Minute)
+	waitPrefix(t, f, "text:PATES 1'5", 2*time.Minute)
+	waitPrefix(t, f, "text:PATES 0'5", 2*time.Minute)
 }
 
 func TestTimerOnlyOneWithoutName(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 // Timers on the front display (extension bar91.timer). A timer counts down in
 // the remote. With the countdown option, the bar shows the time left: when
 // it is the only timer running, second by second (4'59, short enough not to
-// scroll); when several run, once a minute, each in turn (4 MIN LEFT PIZZA).
+// scroll); when several run, once a minute, each in turn (PIZZA 4'34).
 // When it ends, TIME'S UP and its name scroll in a loop until a key of the
 // bar's remote is pressed (on or in standby), it is cancelled, or 10 minutes
 // pass. Qualified on the owner's Bar 9.1 on 10 Nov 2026: the key flag
@@ -94,14 +94,14 @@ func timerClock(left time.Duration) string {
 	return fmt.Sprintf("%d'%02d", sec/60, sec%60)
 }
 
-// timerReminder is the once-a-minute reminder when several timers run, time
-// first so that it does not read as the alarm: 4 MIN LEFT PIZZA.
-func timerReminder(name string, minutes int) string {
-	left := fmt.Sprintf("%d MIN LEFT", minutes)
-	if name != "" && len(left)+1+len(name) <= displayTextMax {
-		return left + " " + name
+// timerReminder is the once-a-minute reminder when several timers run:
+// PIZZA 4'34 (owner's choice, 10 Nov 2026), the time alone without a name.
+func timerReminder(name string, left time.Duration) string {
+	clock := timerClock(left)
+	if name != "" && len(name)+1+len(clock) <= displayTextMax {
+		return name + " " + clock
 	}
-	return left
+	return clock
 }
 
 // timerAlarmText is long enough to scroll (a short text only blinks between
@@ -260,8 +260,9 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 
 // countdowns shows the time left of the timers that asked for it. One timer
 // running: its clock, second by second, in place (4'59). Several: once a
-// minute, a round where each one with the option shows 4 MIN LEFT PIZZA in
-// turn; rounds follow the minutes of the timer that ends first.
+// minute, a round where each one with the option shows PIZZA 4'34 in turn,
+// the time taken when its pass starts; rounds follow the minutes of the
+// timer that ends first.
 func (m *timerManager) countdowns(ctx context.Context) {
 	live := ""          // timer whose clock shows
 	var round time.Time // next round of reminders (several timers)
@@ -316,9 +317,11 @@ func (m *timerManager) countdowns(ctx context.Context) {
 			}
 			if !round.IsZero() && !now.Before(round) {
 				for _, t := range counting {
-					// Nearest minute: at a round, the first timer has just under N min left.
-					if minutes := int((t.Deadline.Sub(now) + time.Minute/2) / time.Minute); minutes >= 1 {
-						if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: timerReminder(t.Text, minutes), Mode: displayPasses, Passes: 1}); err != nil {
+					// From about a minute left: a round lands just under a whole minute.
+					if t.Deadline.Sub(now) > 50*time.Second {
+						t := t
+						fresh := func() string { return timerReminder(t.Text, t.Deadline.Sub(m.port.now())) }
+						if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: fresh(), Mode: displayPasses, Passes: 1, Hooks: &displayHooks{Fresh: fresh}}); err != nil {
 							m.logf("Timer %s: reminder not shown: %v", t.Text, err)
 						}
 					}
