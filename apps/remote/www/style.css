@@ -218,11 +218,6 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .timer-name{font-weight:600;overflow-wrap:anywhere}
 .timer-detail{color:var(--subtle);font-size:var(--font-caption)}
 .timer-left{font-size:1.375rem;font-weight:600;font-variant-numeric:tabular-nums}
-.timer-more{width:44px;height:44px;min-height:44px;padding:0;border:0;background:none;display:grid;place-items:center;color:var(--muted)}
-.timer-more svg{width:20px;height:20px}
-.timer-actions{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 6px}
-.timer-actions button{min-height:44px;border-radius:22px;font-size:var(--font-small)}
-.timer-actions .timer-cancel{color:var(--danger);border-color:#f2a5a566}
 .timer-item.ringing{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:16px;border:0;background:var(--orange);color:#14171e}
 .timer-ringing-head{display:flex;flex-direction:column}
 .timer-item.ringing .timer-name{font-size:1.25rem;font-weight:700}
@@ -303,3 +298,22 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .timer-new-head h3{margin:0}
 .timer-new-close{width:44px;height:44px;min-height:44px;padding:0;border:0;background:none;display:grid;place-items:center;color:var(--muted);margin:-10px -10px -10px 0}
 .timer-new-close svg{width:18px;height:18px}
+.intro{flex-wrap:wrap;gap:12px 20px}
+.timer-chip{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 16px 6px 8px;border-radius:24px;border:1px solid #8ecfc633;background:#8ecfc60a;color:var(--text);text-align:left}
+.timer-chip:hover:enabled{border-color:#8ecfc666;background:#8ecfc612}
+.timer-chip-rings{display:flex;align-items:center}
+.timer-chip-rings .timer-ring{width:30px;height:30px}
+.timer-chip-rings .timer-ring+.timer-ring{margin-left:-6px}
+.timer-chip-rings .timer-ring-track{stroke:#2a313b;fill:var(--panel)}
+.timer-chip-more{font-size:var(--font-caption);color:var(--subtle);margin-left:4px}
+.timer-chip-text{display:flex;flex-direction:column;line-height:1.25}
+#timer-chip-label{font-size:var(--font-small);font-weight:500}
+#timer-chip-time{font-size:var(--font-caption);color:var(--teal);font-variant-numeric:tabular-nums}
+.timer-chip.ringing{border-color:var(--orange);background:#f1ab851a}
+.timer-chip.ringing #timer-chip-time{color:#ffd1bc}
+.timer-ring.is-ringing .timer-ring-left{stroke:var(--orange)}
+@media(prefers-reduced-motion:no-preference){.timer-chip.ringing .timer-chip-rings{animation:timer-pulse 1.2s ease-in-out infinite}}
+@keyframes timer-pulse{50%{opacity:.45}}
+.timer-cancel{width:44px;height:44px;min-height:44px;padding:0;border:0;background:none;display:grid;place-items:center;color:var(--muted)}
+.timer-cancel svg{width:18px;height:18px}
+.timer-cancel:hover:enabled{color:var(--danger);background:#f2a5a514}

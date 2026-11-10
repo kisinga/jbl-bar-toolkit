@@ -10,9 +10,11 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 10 November 2026, first with 
 
 ## In the page
 
+**At the top of the page**, beside the title, a pill shows the timers at a glance: one ring per timer (three at most, then `+2`), filling as the end nears, with the name of a lone timer or `2 timers`, and the next end (`4:59`, `next 4:59`). When one rings, it turns orange and reads `Time's up`. A tap leads to the Timers panel.
+
 The **Timers** panel reads from top to bottom:
 
-1. **Running timers**, first to end first. Each one shows a ring that fills as the end nears (time added empties it a little), its name, when it ends, its options, and the time left (`4:59`), with **+1 min** under it. **⋮** opens **+5 min** and **Cancel**, so that a stray tap does not cancel it. A ringing timer goes on top, in orange, with a large **Stop** and "or press any key on the JBL remote".
+1. **Running timers**, first to end first. Each one shows a ring that fills as the end nears (time added empties it a little), its name, when it ends, its options, and the time left (`4:59`), with **+1 min** under it, and **×** to cancel it. A ringing timer goes on top, in orange, with a large **Stop** and "or press any key on the JBL remote".
    With a timer running, everything below folds behind **Add another timer**, since several timers at once are the exception; it opens on the minutes, and × folds it again. It folds after each start, and opens by itself when no timer is left.
 2. **Start again**: the last four timers started from this device, in a tinted box. One tap starts one again, with its options. A timer that is running cannot start twice, so its button is off meanwhile.
 3. **New timer**:
@@ -107,5 +109,6 @@ The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
 - Undo, recent timers (started again in one tap, kept after a reload, the last first), options kept;
 - the form folded behind Add another timer while timers run, opened and closed again;
 - the ring filling as the end nears, and emptying a little with time added;
-- the scroll to the timer just started, +1 min under the time left, ⋮ with +5 min and Cancel;
+- the rings at the top (count, label, next end, time's up) and their link to the panel;
+- the scroll to the timer just started, +1 min under the time left, × to cancel;
 - standby, a ringing timer with Stop, and 320 px.

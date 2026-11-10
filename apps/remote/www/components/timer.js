@@ -52,7 +52,7 @@ export function createTimer(root, {request, supports = () => true}) {
   let recent = load(RECENT_KEY, []);
   if (!Array.isArray(recent)) recent = [];
   recent = recent.filter(r => r && validText(r.text ?? '') && Number.isInteger(r.minutes) && r.minutes >= 1 && r.minutes <= MAX_MINUTES).slice(0, RECENT_MAX);
-  let latest = null, seen = '', received = 0, problem = '', menu = null, toastTimer = null, undo = null, fresh = null;
+  let latest = null, seen = '', received = 0, problem = '', toastTimer = null, undo = null, fresh = null;
   // With a timer running, the new-timer form folds behind "Add another
   // timer": several timers at once are the exception.
   let adding = false;
@@ -94,8 +94,8 @@ export function createTimer(root, {request, supports = () => true}) {
     for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
     return e;
   }
-  function ring(fraction) {
-    const s = svg('svg', {viewBox: '0 0 44 44', class: 'timer-ring', 'aria-hidden': 'true'});
+  function ring(fraction, ringing = false) {
+    const s = svg('svg', {viewBox: '0 0 44 44', class: 'timer-ring' + (ringing ? ' is-ringing' : ''), 'aria-hidden': 'true'});
     const c = 2 * Math.PI * 18;
     s.append(svg('circle', {cx: 22, cy: 22, r: 18, class: 'timer-ring-track'}));
     if (fraction > 0.01) s.append(svg('circle', {cx: 22, cy: 22, r: 18, class: 'timer-ring-left', 'stroke-dasharray': c.toFixed(1), 'stroke-dashoffset': (c * (1 - Math.min(1, Math.max(0, fraction)))).toFixed(1), transform: 'rotate(-90 22 22)'})); // no dot at the start
@@ -134,28 +134,48 @@ export function createTimer(root, {request, supports = () => true}) {
       const words = el('span', 'timer-words');
       const extras = [t.countdown ? 'on the bar' : '', t.sound === 'always' ? 'chime' : t.sound === 'unless_tv' ? 'chime unless TV' : 'silent'].filter(Boolean);
       words.append(el('span', 'timer-name', name), el('span', 'timer-detail', 'Ends at ' + clockTime(new Date(Date.now() + left)) + ' · ' + extras.join(' · ')));
-      const more = button('', 'timer-more', () => { menu = menu === t.id ? null : t.id; renderList(); }, 'More for ' + name);
-      more.setAttribute('aria-expanded', String(menu === t.id));
-      more.append(svg('svg', {viewBox: '0 0 24 24', 'aria-hidden': 'true'}));
-      for (const cy of [5, 12, 19]) more.lastChild.append(svg('circle', {cx: 12, cy, r: 1.6, fill: 'currentColor', stroke: 'none'}));
-      more.disabled = false;
+      const cancel = button('', 'timer-cancel', () => send('timer_cancel', {id: t.id}), 'Cancel ' + name);
+      cancel.append(svg('svg', {viewBox: '0 0 24 24', 'aria-hidden': 'true'}));
+      cancel.lastChild.append(svg('path', {d: 'M6 6l12 12M18 6 6 18'}));
       // The time left, and +1 min at hand under it (a quick tap while cooking).
       const time = el('span', 'timer-time');
       time.append(el('span', 'timer-left', pageClock(left)));
       if (extend) time.append(button('+1 min', 'timer-add timer-add-one', () => send('timer_extend', {id: t.id, add_s: 60}), 'Add 1 minute to ' + name));
       if (fresh?.id === t.id && Date.now() < fresh.until) item.classList.add('just-started');
       // The ring fills as the end nears (full: time's up); time added empties it a little.
-      item.append(ring(1 - left / total), words, time, more);
-      if (menu === t.id) {
-        const actions = el('div', 'timer-actions');
-        if (extend) actions.append(button('+5 min', 'timer-add', () => send('timer_extend', {id: t.id, add_s: 300}), 'Add 5 minutes to ' + name));
-        actions.append(button('Cancel', 'timer-cancel', () => { menu = null; send('timer_cancel', {id: t.id}); }, 'Cancel ' + name));
-        item.append(actions);
-      }
+      item.append(ring(1 - left / total), words, time, cancel);
       return item;
     }));
     list.hidden = items.length === 0;
+    renderChip();
   }
+
+  // At a glance, at the top of the page: one ring per timer (three at most)
+  // and the next end. A tap leads to the panel.
+  const chip = doc.getElementById('timer-chip');
+  function renderChip() {
+    if (!chip) return;
+    const items = timers();
+    chip.hidden = items.length === 0;
+    if (!items.length) return;
+    const ringing = items.filter(t => t.ringing);
+    const running = items.filter(t => !t.ringing);
+    const next = running[0];
+    chip.classList.toggle('ringing', ringing.length > 0);
+    const rings = doc.getElementById('timer-chip-rings');
+    rings.replaceChildren(...items.slice(0, 3).map(t => ring(t.ringing ? 1 : 1 - remaining(t) / (t.duration_ms || Math.max(remaining(t), t.remaining_ms)), t.ringing)));
+    if (items.length > 3) rings.append(el('span', 'timer-chip-more', '+' + (items.length - 3)));
+    const label = ringing.length ? "Time's up" : items.length === 1 ? title(items[0].text) : items.length + ' timers';
+    const time = ringing.length ? (ringing.length === 1 ? title(ringing[0].text) : ringing.length + ' timers') : (items.length > 1 ? 'next ' : '') + pageClock(remaining(next));
+    doc.getElementById('timer-chip-label').textContent = label;
+    doc.getElementById('timer-chip-time').textContent = time;
+    chip.setAttribute('aria-label', (ringing.length ? "Time's up: " + ringing.map(t => title(t.text)).join(', ') : items.length === 1 ? title(items[0].text) + ' timer, ' + pageClock(remaining(next)) + ' left' : items.length + ' timers running, next in ' + pageClock(remaining(next))) + '. Show the timers.');
+  }
+  chip?.addEventListener('click', () => {
+    root.open = true;
+    root.scrollIntoView({block: 'start', behavior: calm() ? 'auto' : 'smooth'});
+    root.querySelector('summary')?.focus({preventScroll: true});
+  });
 
   function renderRecent() {
     const box = $('timer-recent'), holder = $('timer-recent-list');
@@ -229,7 +249,6 @@ export function createTimer(root, {request, supports = () => true}) {
       const queued = (context.pending || []).filter(a => a === action).length - (context.active === action ? 1 : 0);
       pending.splice(0, Math.max(0, pending.length - queued));
     }
-    if (menu &&!timers().some(t => t.id === menu && !t.ringing)) menu = null;
     if (undo?.id && !timers().some(t => t.id === undo.id)) hideToast();
     const name = fold(text.value), m = Number(minutes.value), o = settings();
     const d = check(name, m, o);
