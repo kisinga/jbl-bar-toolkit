@@ -10,25 +10,28 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 10 November 2026, first with 
 
 ## In the page
 
-The **Timers** panel has:
+The **Timers** panel reads from top to bottom:
 
-- **a name**, optional, for example `PIZZA`. As for display messages, it is upper-cased and accents are folded. Only letters, digits, space and `- . '` are allowed;
-- **a duration** in minutes, from 1 to 720, with 1, 5, 10 and 15 shortcuts;
-- **Show the time left on the bar**:
-  - **one timer running**: its clock, second by second, in place: `4'59`, then `1H04'59` past an hour. No name, so that it does not scroll;
-  - **several running**: once a minute, a round where each timer with the option shows its name and time left, in turn: `LESSIVE 12'57`, then `PIZZA 4'59`. Each time is taken when its own pass starts, so it is not stale by the earlier passes of the round, and the last minute is included. Rounds follow the whole minutes of the first timer to end that has a minute or more left;
-  - the display switches between the two as timers start and end.
+1. **Running timers**, first to end first. Each one shows a ring for the time left, its name, when it ends, its options, and the time left (`4:59`). **⋮** opens **+1 min**, **+5 min** and **Cancel**, so that a stray tap does not cancel it. A ringing timer goes on top, in orange, with a large **Stop** and "or press any key on the JBL remote".
+2. **Start again**: the last four timers started from this device, in a tinted box. One tap starts one again, with its options. A timer that is running cannot start twice, so its button is off meanwhile.
+3. **New timer**:
+   - **the minutes**, large, with − and + and the shortcuts 1, 3, 5, 10, 15 and 30. They can be typed, from 1 to 720;
+   - **a name**, optional, for example `Pizza`. As for display messages, the bar shows it upper-cased, with accents folded. Only letters, digits, space and `- . '` are allowed. A name in use is refused under the field, with a suggestion (`Pizza 2`);
+   - **Options**, folded, with a summary of the choices (`Chime unless watching TV · no countdown`):
+     - **Countdown on the bar**:
+       - **one timer running**: its clock, second by second, in place: `4'59`, then `1H04'59` past an hour. No name, so that it does not scroll;
+       - **several running**: once a minute, a round where each timer with the option shows its name and time left, in turn: `LESSIVE 12'57`, then `PIZZA 4'59`. Each time is taken when its own pass starts, so it is not stale by the earlier passes of the round, and the last minute is included. Rounds follow the whole minutes of the first timer to end that has a minute or more left;
+       - the display switches between the two as timers start and end;
+     - **Chime at the end**: **Off**, **Not on TV** (the default: silent while the bar is on with TV, optical or HDMI, so a film is never cut) or **Always** (even during a film);
+     - with a chime, **Volume at least**, 1 to 30, 10 by default: the bar is unmuted and turned up to this volume if it is lower, never down;
+     - and **Rings for**: 10 s, 30 s (default), 1 min or 2 min. The chime repeats this long, then the bar returns to its volume, source or standby. The `TIME'S UP` text goes on until a key.
 
-- **Sound at the end**:
-  - **Unless watching TV** (default in the page): a chime rings, except when the bar is on with TV, optical or HDMI, so a film is never cut;
-  - **Always**: it rings even during a film;
-  - **Off**.
+     The options are kept for the next timers on this device;
+   - **Start** names what it starts (`Start 5-minute timer`);
+   - under it, folded, **Rings at 18:47 · what will happen?** Unfolded, three lines say what the bar does now, at the end (the text that scrolls, the chime) and how to stop it.
+4. After a start, a toast says `Pizza started. Rings at 18:47.` for 8 seconds, with **Undo**, which cancels it.
 
-  With a sound, two more settings appear:
-  - **Volume at least**, 1 to 30, 10 by default. The bar is unmuted and turned up to this volume if it is lower, never down.
-  - **Ring for**: 10 s, 30 s (default), 1 min or 2 min. The chime repeats this long, then the bar returns to its volume, source or standby. The `TIME'S UP` text goes on until a key.
-
-Running timers are listed with their time left and a Cancel button. A ringing timer offers Stop. The panel works with the bar in standby.
+Recent timers and options live in the browser's storage: each device has its own. The panel works with the bar in standby.
 
 ## Rules
 
@@ -56,16 +59,18 @@ Running timers are listed with their time left and a Cancel button. A ringing ti
 
 ## API
 
-`GET /api/features` lists the `bar91.timer` extension. The state carries the timers under `extensions["bar91.timer"].timers`. Each entry has `id`, `text` (empty without a name), `countdown`, `sound`, `sound_volume`, `ring_s`, `remaining_ms` (as of that state) and `ringing`.
+`GET /api/features` lists the `bar91.timer` extension. The state carries the timers under `extensions["bar91.timer"].timers`. Each entry has `id`, `text` (empty without a name), `countdown`, `sound`, `sound_volume`, `ring_s`, `remaining_ms` (as of that state), `duration_ms` (from the start to the end, time added included) and `ringing`.
 
 ```json
 {"action":"bar91.timer.start","parameters":{"text":"Pizza","duration_s":600,"countdown":true,"sound":"unless_tv"}}
 {"action":"bar91.timer.start","parameters":{"duration_s":300}}
+{"action":"bar91.timer.extend","parameters":{"id":"t1","add_s":60}}
 {"action":"bar91.timer.cancel","parameters":{"id":"t1"}}
 ```
 
-The short aliases are `timer_start` and `timer_cancel`.
+The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
 - **Start:** `duration_s` is required (1 to 43200). `text`, `countdown`, `sound` (`off`, the default for the API, `unless_tv` or `always`), `sound_volume` (1 to 30, default 10) and `ring_s` (3 to 300, default 30) are optional.
+- **Extend:** `add_s`, 1 to 3600, adds time to a running timer, up to 12 hours left. A ringing timer is not extended.
 - **Refused:** an invalid name, a name already in use (or a second timer without a name), a ninth timer, an unknown id and unknown fields.
 
 ## Tests
@@ -84,6 +89,7 @@ The short aliases are `timer_start` and `timer_cancel`.
 - duplicate names, a single unnamed timer, cancel, and `display_cancel` leaving timers alone;
 - two alarms taking turns;
 - the limit of 8 timers;
+- time added to a running timer: the clock follows and the alarm comes later; a ringing timer, an unknown id and more than 12 hours are refused;
 - the sound (`timer_sound_test.go`):
   - the chime is a valid WAV of about 2.8 s, without clipping;
   - the Cast exchange with a simulated receiver: launch, heartbeat, load, played to the end, a refused load, and ringing again until the time is up;
@@ -91,4 +97,10 @@ The short aliases are `timer_start` and `timer_cancel`.
   - the sound played once when its timer rings, and not for a timer without sound;
   - the parameters (mode, volume, ringing time, with defaults).
 
-`tests/webremote-ui.mjs` covers the panel: a name or none, a duplicate refused, standby, a ringing timer, and 320 px.
+`tests/webremote-ui.mjs` covers the panel:
+- the folded options and what will happen, and their summaries;
+- the minutes, presets and Start's label;
+- a name or none, a duplicate refused under the field;
+- Undo, recent timers (started again in one tap, kept after a reload, the last first), options kept;
+- ⋮ with +1 min and Cancel;
+- standby, a ringing timer with Stop, and 320 px.

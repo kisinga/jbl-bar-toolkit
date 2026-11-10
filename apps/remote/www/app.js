@@ -25,7 +25,7 @@ const details=createDetails(document.querySelector('.more-details'));
 const capabilities=createCapabilities(document);
 const bassOffset=createBassOffset($('bass-offset-panel'));
 // Timers have their own buttons: they work in standby, unlike the bar controls.
-const timer=createTimer($('timer-panel'),{request:action=>{if(!csrf||!online||queue.length>=8)return;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();}});
+const timer=createTimer($('timer-panel'),{supports:action=>capabilities.command(action).action.includes('.'),request:action=>{if(!csrf||!online||queue.length>=8)return false;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();return true;}});
 const advanced=createAdvanced($('advanced'),$('room-setup'));
 const speakers=createSpeakers($('speaker-view'));
 const components=[bluetooth,sound,playback,system,equalizer,details,advanced,bassOffset,speakers,timer];
@@ -208,6 +208,7 @@ function success(action, s) {
   if (action === 'bass_offset_set') return 'Bass offset saved for startup.';
   if (action === 'timer_start') return 'Timer started.';
   if (action === 'timer_cancel') return 'Timer stopped.';
+  if (action === 'timer_extend') return 'Time added.';
   if (action === 'center_next') return 'Center level ' + s.sound.center + ' selected.';
   if (action === 'atmos_next') return 'Atmos height: ' + ['Low','Mid','High'][s.sound.atmos] + '.';
   if (action === 'rear_next') return 'Rear speakers: ' + ['Low','Mid','High','Muted'][s.sound.rear] + '.';
@@ -224,6 +225,7 @@ function pendingMessage() {
   if (active === 'eq_apply') return 'Applying front EQ…';
   if (active === 'timer_start') return 'Starting timer…';
   if (active === 'timer_cancel') return 'Stopping timer…';
+  if (active === 'timer_extend') return 'Adding time…';
   if (active === 'eq_reset') return 'Restoring original tuning…';
 	if (active === 'night_toggle') return 'Changing night mode… audio may briefly mute.';
 	if (active?.startsWith('media_')) return 'Sending playback control…';
@@ -306,9 +308,10 @@ async function pump() {
     adopt(data);
     if (!data.available) throw new Error(data.error || 'Soundbar unavailable.');
     playback.accepted(action,requestPeer,data);
-    if(action==='timer_start') timer.started();
+    if(action==='timer_start') timer.started(parameters);
     feedback(success(action, data), 'success');
   } catch (error) {
+    if(action.startsWith('timer_')) timer.failed(action);
     queue = [];
     clearSyncDraft();
     stopHold();
