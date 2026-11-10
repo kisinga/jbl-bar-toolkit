@@ -155,7 +155,20 @@
     "device-automation",
     "cast-eq-row",
     "cast-eq",
-    "last-seen"
+    "last-seen",
+    "timer-panel",
+    "timer-text",
+    "timer-minutes",
+    "timer-countdown",
+    "timer-start",
+    "timer-state",
+    "timer-list",
+    "timer-sound",
+    "timer-sound-hint",
+    "timer-sound-options",
+    "timer-volume",
+    "timer-ring",
+    "timer-volume-hint"
   ],
   "actions": [
     "atmos_next",
@@ -188,7 +201,8 @@
   "components": [
     "bass-offset",
     "center-level",
-    "front-eq"
+    "front-eq",
+    "timer"
   ],
   "levels": {
     "bass": [

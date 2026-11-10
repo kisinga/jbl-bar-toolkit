@@ -1,0 +1,255 @@
+package main
+
+import (
+	"bytes"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"math"
+	"net"
+	"sync"
+	"time"
+)
+
+// Sound at the end of a timer. The remote asks the bar's own Cast receiver
+// (127.0.0.1:8009) to play a chime it serves itself, as a phone would cast a
+// sound. Qualified on the owner's Bar 9.1 on 10 Nov 2026 with catt: the bar
+// plays it on or from standby (it wakes up, without waking the TV), at the
+// bar's volume, and then stays on the Chromecast source; so the remote puts
+// the previous source or standby back afterwards (timer_sound_bar91.go).
+const (
+	timerSoundOff      = "off"
+	timerSoundUnlessTV = "unless_tv" // not when the bar is on TV, optical or HDMI
+	timerSoundAlways   = "always"
+
+	timerSoundVolume    = 10               // default minimum volume while ringing
+	timerSoundVolumeMax = 30               // bar volume steps offered
+	timerSoundRing      = 30 * time.Second // default ringing time
+	// castVolumeSteps: native volume ≈ Cast level × 32 (owner's bar,
+	// 10 Nov 2026: 0.50 gave 16, 0.34 gave 11). Readback corrects rounding.
+	castVolumeSteps = 32
+
+	castDefaultReceiver = "CC1AD845" // Cast Default Media Receiver
+	castSoundSender     = "jbl-remote-sound"
+	timerChimeRate      = 22050
+)
+
+var errCastSoundFailed = errors.New("the Cast receiver could not play the sound")
+
+// timerSoundOptions is what rings when a timer ends.
+type timerSoundOptions struct {
+	Mode    string
+	Volume  int           // minimum volume while ringing (raised, never lowered; unmuted)
+	RingFor time.Duration // the chime repeats this long, unless the timer is stopped first
+}
+
+func validTimerSound(mode string) bool {
+	return mode == timerSoundOff || mode == timerSoundUnlessTV || mode == timerSoundAlways
+}
+
+// timerChime is a "dring dring" bell, twice, as a 16-bit mono WAV (~2.8 s):
+// two bell partials with a fast tremolo, like an old ringing phone.
+func timerChime() []byte {
+	var samples []int16
+	tone := func(seconds float64) {
+		n := int(seconds * timerChimeRate)
+		for i := 0; i < n; i++ {
+			t := float64(i) / timerChimeRate
+			env := math.Min(1, t/0.005) * math.Min(1, (seconds-t)/0.04)
+			tremolo := 0.6 + 0.4*math.Copysign(1, math.Sin(2*math.Pi*24*t))
+			v := (math.Sin(2*math.Pi*1318.5*t) + 0.35*math.Sin(2*math.Pi*2637*t)) / 1.35
+			samples = append(samples, int16(0.55*32767*env*tremolo*v))
+		}
+	}
+	silence := func(seconds float64) { samples = append(samples, make([]int16, int(seconds*timerChimeRate))...) }
+	for i := 0; i < 2; i++ {
+		tone(0.45)
+		silence(0.18)
+		tone(0.45)
+		silence(0.6)
+	}
+	var b bytes.Buffer
+	data := len(samples) * 2
+	b.WriteString("RIFF")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(36+data))
+	b.WriteString("WAVEfmt ")
+	for _, field := range []any{uint32(16), uint16(1), uint16(1), uint32(timerChimeRate), uint32(timerChimeRate * 2), uint16(2), uint16(16)} {
+		_ = binary.Write(&b, binary.LittleEndian, field) // PCM, mono, 16-bit
+	}
+	b.WriteString("data")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(data))
+	_ = binary.Write(&b, binary.LittleEndian, samples)
+	return b.Bytes()
+}
+
+// castPlayConnection launches the Default Media Receiver on an open Cast
+// connection, calls prepare (it raises the volume) and waits for it, then
+// loads url and plays it again each time it finishes until ringFor has
+// passed. The chime thus starts at its volume: during the sound, any key
+// stops the alarm (owner's choice, 10 Nov 2026). Heartbeats are answered
+// meanwhile by a reader of its own. errCastSoundFailed means the receiver
+// refused or could not fetch the media (the caller may try another
+// address); the caller bounds the time with the connection deadline and
+// stops early by closing the connection. prepare has returned when it does.
+func castPlayConnection(conn net.Conn, url, contentType string, ringFor time.Duration, prepare func()) error {
+	var writing sync.Mutex
+	send := func(destination, namespace string, payload map[string]any) error {
+		writing.Lock()
+		defer writing.Unlock()
+		return sendCastMessageFrom(conn, castSoundSender, namespace, destination, payload)
+	}
+	type incoming struct {
+		m    castMessage
+		body map[string]any
+	}
+	in := make(chan incoming)
+	failed := make(chan error, 1)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			m, e := readCastMessage(conn)
+			if e != nil {
+				failed <- e
+				return
+			}
+			var body map[string]any
+			if json.Unmarshal([]byte(m.payload), &body) != nil {
+				continue
+			}
+			if m.namespace == castHeartbeat && body["type"] == "PING" {
+				if e := send(m.source, castHeartbeat, map[string]any{"type": "PONG"}); e != nil {
+					failed <- e
+					return
+				}
+				continue
+			}
+			if m.destination != castSoundSender && m.destination != "*" {
+				continue
+			}
+			select {
+			case in <- incoming{m, body}:
+			case <-stop:
+				return
+			}
+		}
+	}()
+	var lost error // the connection failed; later reads report it again
+	read := func() (castMessage, map[string]any, error) {
+		if lost != nil {
+			return castMessage{}, nil, lost
+		}
+		select {
+		case x := <-in:
+			return x.m, x.body, nil
+		case lost = <-failed:
+			return castMessage{}, nil, lost
+		}
+	}
+	connect := map[string]any{"type": "CONNECT", "origin": map[string]any{}}
+	if e := send("receiver-0", castConnection, connect); e != nil {
+		return e
+	}
+	if e := send("receiver-0", castReceiver, map[string]any{"type": "LAUNCH", "appId": castDefaultReceiver, "requestId": 1}); e != nil {
+		return e
+	}
+	transport := ""
+	for transport == "" {
+		m, body, e := read()
+		if e != nil {
+			return e
+		}
+		switch body["type"] {
+		case "LAUNCH_ERROR", "INVALID_REQUEST":
+			return errCastSoundFailed
+		case "RECEIVER_STATUS":
+			if m.namespace != castReceiver {
+				continue
+			}
+			var reply castReceiverReply
+			if json.Unmarshal([]byte(m.payload), &reply) != nil {
+				continue
+			}
+			for _, app := range reply.Status.Applications {
+				if app.AppID == castDefaultReceiver && app.TransportID != "" {
+					transport = app.TransportID
+				}
+			}
+		}
+	}
+	if e := send(transport, castConnection, connect); e != nil {
+		return e
+	}
+	if prepare != nil {
+		ready := make(chan struct{})
+		go func() {
+			defer close(ready)
+			prepare()
+		}()
+	waiting:
+		for {
+			select {
+			case <-ready:
+				break waiting
+			case <-in: // nothing to act on before the load
+			case lost = <-failed:
+				<-ready
+				return lost
+			}
+		}
+	}
+	until := time.Now().Add(ringFor)
+	request := 1
+	loadMedia := func() error {
+		request++
+		load := map[string]any{"type": "LOAD", "requestId": request, "autoplay": true, "currentTime": 0,
+			"media": map[string]any{"contentId": url, "contentType": contentType, "streamType": "BUFFERED",
+				"metadata": map[string]any{"metadataType": 0, "title": "Timer"}}}
+		return send(transport, castMedia, load)
+	}
+	if e := loadMedia(); e != nil {
+		return e
+	}
+	played := false
+	for {
+		m, body, e := read()
+		if e != nil {
+			return e
+		}
+		if m.namespace != castMedia {
+			continue
+		}
+		switch body["type"] {
+		case "LOAD_FAILED", "LOAD_CANCELLED", "INVALID_REQUEST":
+			return errCastSoundFailed
+		case "MEDIA_STATUS":
+			statuses, _ := body["status"].([]any)
+			for _, raw := range statuses {
+				status, _ := raw.(map[string]any)
+				switch status["playerState"] {
+				case "PLAYING", "BUFFERING", "PAUSED":
+					played = true
+				case "IDLE":
+					switch status["idleReason"] {
+					case "FINISHED":
+						if !time.Now().Before(until) {
+							return nil
+						}
+						if e := loadMedia(); e != nil { // ring again
+							return e
+						}
+					case "ERROR":
+						return errCastSoundFailed
+					case "CANCELLED", "INTERRUPTED":
+						if played {
+							return nil // something else took the receiver
+						}
+						return errCastSoundFailed
+					}
+				}
+			}
+		}
+	}
+}
+
+func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }

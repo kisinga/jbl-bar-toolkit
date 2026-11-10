@@ -19,6 +19,7 @@ type fakeDisplay struct {
 	mem     map[int64]uint32
 	text    string
 	gateOff bool     // simulate another control holding the gate
+	own     bool     // simulate keys the remote sends itself
 	shown   []string // text visible on screen at each change
 	visible string   // what the screen shows now
 	trace   []string // level-2 / level-3 changes, for failures
@@ -34,6 +35,12 @@ func newFakeDisplay(level3 uint32) *fakeDisplay {
 
 func (f *fakeDisplay) now() time.Time {
 	return f.origin.Add(time.Since(f.origin) * displayScale)
+}
+
+func (f *fakeDisplay) ownKeys() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.own
 }
 
 func (f *fakeDisplay) sleep(ctx context.Context, d time.Duration) error {
@@ -104,7 +111,8 @@ func (m fakeDisplayMem) write32(a int64, v uint32) error {
 	m.f.trace = append(m.f.trace, "")
 	return nil
 }
-func (m fakeDisplayMem) writeText(t string) error { m.f.text = t; return nil }
+func (m fakeDisplayMem) writeText(t string) error { m.f.text = t; m.f.render(); return nil }
+func (m fakeDisplayMem) keyDown() (bool, error)   { return m.f.mem[vfdKeyFlag] != 0, nil }
 func (m fakeDisplayMem) tick() (uint32, error) {
 	return uint32(m.f.now().Sub(m.f.origin).Milliseconds() / 10), nil
 }
@@ -194,17 +202,17 @@ func show(t *testing.T, m *displayManager, params string) {
 
 func TestDisplayTextFolding(t *testing.T) {
 	for raw, want := range map[string]string{
-		"frigo fermé":          "FRIGO FERME",
-		"  Porte   ouverte ! ": "PORTE OUVERTE !",
-		"Œuf – côté":           "OEUF - COTE",
-		"l’entrée":             "L'ENTREE",
+		"frigo fermé":         "FRIGO FERME",
+		"  Porte   ouverte. ": "PORTE OUVERTE.",
+		"Œuf – côté":          "OEUF - COTE",
+		"l’entrée":            "L'ENTREE",
 	} {
 		got, err := displayText(raw)
 		if err != nil || got != want {
 			t.Errorf("displayText(%q) = %q, %v; want %q", raw, got, err, want)
 		}
 	}
-	for _, raw := range []string{"", "   ", strings.Repeat("A", 32), "50% OFF", "€"} {
+	for _, raw := range []string{"", "   ", strings.Repeat("A", 32), "50% OFF", "STOP!", "A:B", "€"} {
 		if got, err := displayText(raw); err == nil {
 			t.Errorf("displayText(%q) = %q, want an error", raw, got)
 		}

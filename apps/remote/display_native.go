@@ -27,6 +27,10 @@ type barDisplayPort struct{ r *remote }
 
 func (p barDisplayPort) now() time.Time { return time.Now() }
 
+func (p barDisplayPort) ownKeys() bool {
+	return p.r.device != nil && time.Now().UnixNano() < p.r.device.ownKeyUntil.Load()
+}
+
 func (p barDisplayPort) sleep(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -39,9 +43,13 @@ func (p barDisplayPort) sleep(ctx context.Context, d time.Duration) error {
 }
 
 // step runs f under the action gate (unreported, like the monitors) and the
-// device lock. force skips the gate: only for handing the display back.
+// device lock. force skips the gate: only for handing the display back. The
+// timer sound also lets steps through while it holds the gate for its Cast
+// launch and volume: those go through Cast and press no key, so the alarm
+// keeps showing and a key pressed meanwhile still stops it (owner's bar,
+// 10 Nov 2026: presses during the volume change were ignored).
 func (p barDisplayPort) step(force bool, f func(displayMem) error) error {
-	if !force {
+	if !force && !p.r.displayThroughGate.Load() {
 		release, _, ok := p.r.hold("")
 		if !ok {
 			return errDisplayGate
@@ -81,6 +89,11 @@ func (m barDisplayMem) writeDisplay(address int64, b []byte) error {
 	defer f.Close()
 	_, e = f.WriteAt(b, address)
 	return e
+}
+
+func (m barDisplayMem) keyDown() (bool, error) {
+	v, e := m.d.read(vfdKeyFlag, 1)
+	return v != 0, e
 }
 
 func (m barDisplayMem) write32(address int64, value uint32) error {
