@@ -204,3 +204,24 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .sub-labels .sub-caption{width:auto;margin:0;text-align:right;justify-content:flex-end}
 .sub-labels .bass-caption{text-align:right;margin-top:8px}
 }
+.timer-panel{margin-top:15px;padding:0 21px 18px}
+.timer-panel>summary{font-size:var(--font-body);padding-top:21px;padding-bottom:21px}
+.timer-form{display:grid;gap:12px}
+.timer-field{display:grid;gap:6px;font-size:var(--font-small);color:var(--muted)}
+.timer-field input,.timer-duration input{border:1px solid #ffffff1a;border-radius:7px;background:#24272d;color:var(--text);padding:9px 11px;min-height:44px;font:inherit;font-size:var(--font-control);min-width:0}
+#timer-text{text-transform:uppercase}
+.timer-duration{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.timer-duration input{width:6.5em}
+.timer-presets{display:flex;gap:6px}
+.timer-presets button{min-width:44px;min-height:44px;font-size:var(--font-small)}
+.timer-check{display:flex;gap:9px;align-items:center;font-size:var(--font-small);min-height:44px}
+.timer-check input{width:20px;height:20px}
+#timer-start{font-size:var(--font-small);justify-self:start}
+#timer-state{display:block;margin-top:12px;color:var(--muted)}
+.timer-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+.timer-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:9px 12px}
+.timer-name{font-weight:600;overflow-wrap:anywhere}
+.timer-time{grid-column:1;color:var(--muted);font-size:var(--font-small);font-variant-numeric:tabular-nums}
+.timer-cancel{grid-column:2;grid-row:1/3;font-size:var(--font-small);min-height:44px}
+.timer-item.ringing{border-color:var(--orange)}
+.timer-item.ringing .timer-time{color:var(--orange)}

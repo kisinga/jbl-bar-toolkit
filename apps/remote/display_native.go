@@ -83,6 +83,11 @@ func (m barDisplayMem) writeDisplay(address int64, b []byte) error {
 	return e
 }
 
+func (m barDisplayMem) keyDown() (bool, error) {
+	v, e := m.d.read(vfdKeyFlag, 1)
+	return v != 0, e
+}
+
 func (m barDisplayMem) write32(address int64, value uint32) error {
 	var b [4]byte
 	binary.LittleEndian.PutUint32(b[:], value)

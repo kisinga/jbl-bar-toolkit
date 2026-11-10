@@ -31,6 +31,7 @@ const (
 	vfdTempTick           = vfdContext + 0x8c
 	vfdTempText           = vfdContext + 0x98
 	vfdTickPeriod         = 0xcf1854
+	vfdKeyFlag            = 13822224 // 1 while a key of the bar's remote is pressed, also in standby
 	vfdLevel3None         = 52
 	vfdLevel3StandbyBlank = 28
 	vfdMessageCustom      = 1
@@ -44,6 +45,8 @@ const (
 	displayMaxRuns  = 99
 	displayMaxTime  = 24 * time.Hour
 	displayReleaseT = 5 * time.Second
+	displayKeyPoll  = 100 * time.Millisecond // a key press shows on vfdKeyFlag for ~0.1-0.5 s
+	displayLivePass = 10 * time.Second       // live text: turn length when other messages wait
 )
 
 var (
@@ -53,6 +56,7 @@ var (
 	errDisplayStopped  = errors.New("display message stopped")
 	errDisplayBusy     = errors.New("display still busy")
 	errDisplayDeferred = errors.New("the bar showed its own message")
+	errDisplayKey      = errors.New("a key of the bar's remote was pressed")
 	// The display has no lower case or accents: fold common Latin letters.
 	displayFold = strings.NewReplacer(
 		"À", "A", "Â", "A", "Ä", "A", "Á", "A", "Ã", "A", "Å", "A", "Æ", "AE",
@@ -103,6 +107,21 @@ type displayRequest struct {
 	Mode     displayMode
 	Passes   int
 	For      time.Duration
+	Hooks    *displayHooks // nil for plain messages
+}
+
+// displayHooks extend a message for features built on it (timers).
+type displayHooks struct {
+	// Live gives the text to show now. It is rewritten in place while the
+	// message shows (no blank between passes); keep it short enough not to
+	// scroll (20 characters).
+	Live func() string
+	// StopOnKey ends the message when a key of the bar's remote is pressed,
+	// on or in standby.
+	StopOnKey bool
+	// Done is called once when the message ends: "done", "key", "cancelled",
+	// "busy" or "error".
+	Done func(reason string)
 }
 
 func parseDisplayShow(data json.RawMessage) (displayRequest, error) {
@@ -126,6 +145,9 @@ func parseDisplayShow(data json.RawMessage) (displayRequest, error) {
 	}
 	if !displayIDPattern.MatchString(r.ID) {
 		return displayRequest{}, errors.New("id: 1-32 of a-z 0-9 _ -")
+	}
+	if strings.HasPrefix(r.ID, timerDisplayID) {
+		return displayRequest{}, errors.New("id: timer- is reserved for timers")
 	}
 	set := 0
 	if p.Repeat != nil {
@@ -172,6 +194,8 @@ type displayMem interface {
 	writeText(text string) error
 	// tick is the native tick now (CLOCK_MONOTONIC / ms_per_tick).
 	tick() (uint32, error)
+	// keyDown reports whether a key of the bar's remote is pressed now.
+	keyDown() (bool, error)
 }
 
 // displayPort gives exclusive native access for one short step, and the clock.
@@ -192,6 +216,16 @@ type displayJob struct {
 	pass   int
 	own    bool // our text is selected (level 2 = 1)
 	stby   bool // we lifted the standby blank screen (level 3 28 -> 52)
+	shown  string
+	armed  bool   // StopOnKey: the key flag was seen released since the last gap
+	reason string // why the message ended, for Hooks.Done
+}
+
+func (job *displayJob) hooks() displayHooks {
+	if job.req.Hooks == nil {
+		return displayHooks{}
+	}
+	return *job.req.Hooks
 }
 
 // displayManager owns the front display for custom messages: one message on
@@ -258,14 +292,15 @@ func (m *displayManager) Show(r displayRequest) error {
 	return nil
 }
 
-// Cancel stops the message with id, or every message when id is empty.
+// Cancel stops the message with id, or every message (timers excepted) when id is empty.
 // It reports whether something was stopped.
 func (m *displayManager) Cancel(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	found := false
 	for key, job := range m.jobs {
-		if id == "" || key == id {
+		// Cancelling every message leaves timers alone: they have their own cancel.
+		if (id == "" && !strings.HasPrefix(key, timerDisplayID)) || key == id {
 			job.cancel()
 			found = true
 		}
@@ -273,7 +308,14 @@ func (m *displayManager) Cancel(id string) bool {
 	return found
 }
 
-func (m *displayManager) cancelAll() { m.Cancel("") }
+// cancelAll stops every message, timers included (shutdown).
+func (m *displayManager) cancelAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, job := range m.jobs {
+		job.cancel()
+	}
+}
 
 // acquire waits until job owns the display, or until the deadline (zero: none).
 func (m *displayManager) acquire(job *displayJob, deadline time.Time) error {
@@ -333,6 +375,13 @@ func (m *displayManager) finish(job *displayJob) {
 	m.notifyLocked()
 	m.mu.Unlock()
 	job.cancel()
+	if done := job.hooks().Done; done != nil {
+		reason := job.reason
+		if reason == "" {
+			reason = "done"
+		}
+		done(reason)
+	}
 	close(job.done)
 	m.running.Done()
 }
@@ -450,6 +499,7 @@ func (m *displayManager) take(job *displayJob, text string) error {
 		if e := mem.writeText(text); e != nil {
 			return e
 		}
+		job.shown = text
 		t, e := mem.tick()
 		if e != nil {
 			return e
@@ -501,12 +551,30 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 		}
 	}
 	end := m.port.now().Add(d)
+	h := job.hooks()
+	poll := displayPoll
+	if h.StopOnKey {
+		poll = displayKeyPoll
+	}
 	for m.port.now().Before(end) {
-		if m.port.sleep(job.ctx, displayPoll) != nil {
+		if m.port.sleep(job.ctx, poll) != nil {
 			return errDisplayStopped
 		}
-		var deferred bool
+		var deferred, key bool
 		err := m.port.step(false, func(mem displayMem) error {
+			if h.StopOnKey {
+				// Only a press seen after a release counts: the flag may still
+				// be set by a key the remote itself sent while it held the gate.
+				down, e := mem.keyDown()
+				if e != nil {
+					return e
+				}
+				if !down {
+					job.armed = true
+				} else if job.armed {
+					key = true
+				}
+			}
 			sel, e := mem.read32(vfdLevel2)
 			if e != nil {
 				return e
@@ -530,14 +598,28 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 				job.own, job.stby = false, false
 				return e
 			}
+			if h.Live != nil && text != " " {
+				if live := h.Live(); live != job.shown {
+					// In place: the selector stays, so a short text does not restart.
+					if e = mem.writeText(live); e != nil {
+						return e
+					}
+					job.shown = live
+				}
+			}
 			t, e := mem.tick()
 			if e != nil {
 				return e
 			}
 			return mem.write32(vfdTempTick, t)
 		})
-		if err != nil && err != errDisplayGate {
+		if err == errDisplayGate {
+			job.armed = false
+		} else if err != nil {
 			return err
+		}
+		if key {
+			return errDisplayKey
 		}
 		if deferred {
 			return errDisplayDeferred
@@ -548,59 +630,94 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 
 func (m *displayManager) run(job *displayJob) {
 	defer m.finish(job)
-	r := job.req
+	r, h := job.req, job.hooks()
+	end := func(err error) {
+		switch err {
+		case nil:
+			job.reason = "done"
+		case errDisplayStopped:
+			job.reason = "cancelled"
+		case errDisplayKey:
+			job.reason = "key"
+		case errDisplayBusy:
+			job.reason = "busy"
+		default:
+			job.reason = "error"
+			m.logf("Display message %s: stopped: %v", r.ID, err)
+		}
+	}
 	if err := m.acquire(job, m.budget(job)); err != nil {
-		if err != errDisplayStopped {
+		if err == errDisplayBusy {
 			m.logf("Display message %s: not shown, another message kept the display", r.ID)
 		}
+		end(err)
 		return
 	}
 	if err := m.waitFree(job); err != nil {
-		if err != errDisplayStopped {
+		if err == errDisplayBusy {
 			m.logf("Display message %s: not shown, the display stayed busy", r.ID)
 		}
+		end(err)
 		return
 	}
-	passTime := displayPassTime(r.Text)
+	text := func() string {
+		if h.Live != nil {
+			return h.Live()
+		}
+		return r.Text
+	}
+	// Live text (a countdown) shows without blanks; its passes only set how
+	// long it keeps the display when other messages wait.
+	passTime, gap := displayPassTime(r.Text), displayGap
+	if h.Live != nil {
+		passTime, gap = displayLivePass, 0
+	}
 	for m.more(job) {
-		err := m.show(job, r.Text, passTime)
+		err := m.show(job, text(), passTime)
 		if err == nil {
 			job.pass++
 			if !m.more(job) {
 				// After the last pass, a blank only when the bar is on: in
 				// standby the screen goes back to black anyway.
-				if !job.stby {
-					err = m.show(job, " ", displayGap)
+				if !job.stby && gap > 0 {
+					err = m.show(job, " ", gap)
 				}
 				if err == nil || err == errDisplayDeferred {
+					end(nil)
 					return
 				}
-			} else if err = m.show(job, " ", displayGap); err == nil {
-				if m.waiting() {
-					// A long or endless message lets queued messages through.
-					m.release(job)
-					m.yield(job)
-					if err = m.acquire(job, m.budget(job)); err == nil {
-						err = m.waitFree(job)
-					}
-					if err != nil {
-						return
-					}
+			} else {
+				if gap > 0 {
+					err = m.show(job, " ", gap)
 				}
-				continue
+				if err == nil {
+					if m.waiting() {
+						// A long or endless message lets queued messages through.
+						m.release(job)
+						m.yield(job)
+						if err = m.acquire(job, m.budget(job)); err == nil {
+							err = m.waitFree(job)
+						}
+						if err != nil {
+							end(err)
+							return
+						}
+					}
+					continue
+				}
 			}
 		}
 		if err != errDisplayDeferred {
-			if err != errDisplayStopped {
-				m.logf("Display message %s: stopped: %v", r.ID, err)
-			}
+			end(err)
 			return
 		}
 		// The bar showed something of its own: let it finish, then show the
 		// interrupted pass again (a pass only counts when shown to the end).
 		m.release(job)
 		if err = m.waitFree(job); err != nil {
+			end(err)
 			return
 		}
 	}
+	end(nil)
 }

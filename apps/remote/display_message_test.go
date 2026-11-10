@@ -104,7 +104,8 @@ func (m fakeDisplayMem) write32(a int64, v uint32) error {
 	m.f.trace = append(m.f.trace, "")
 	return nil
 }
-func (m fakeDisplayMem) writeText(t string) error { m.f.text = t; return nil }
+func (m fakeDisplayMem) writeText(t string) error { m.f.text = t; m.f.render(); return nil }
+func (m fakeDisplayMem) keyDown() (bool, error)   { return m.f.mem[vfdKeyFlag] != 0, nil }
 func (m fakeDisplayMem) tick() (uint32, error) {
 	return uint32(m.f.now().Sub(m.f.origin).Milliseconds() / 10), nil
 }

@@ -110,6 +110,8 @@ type remote struct {
 	stop          <-chan struct{}
 	actionMu      sync.Mutex
 	display       *displayManager
+	displayPort   displayPort
+	timers        *timerManager
 }
 
 // This native seam preserves existing Bar 9.1 fixtures. The reusable public

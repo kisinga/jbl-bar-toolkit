@@ -73,6 +73,8 @@ const server = createServer(async (req, res) => {
       if (action === 'smart') state.mode='Smart';
       if (action === 'standard') state.mode='Standard';
       if (action === 'av_sync_set') state.sound.av_sync_ms=payload.value;
+      if (action === 'bar91.timer.start') { const timers=state.extensions['bar91.timer'].timers; timers.push({id:'t'+(timers.length+1),text:payload.parameters.text,countdown:payload.parameters.countdown,remaining_ms:payload.parameters.duration_s*1000,ringing:false}); }
+      if (action === 'bar91.timer.cancel') { const box=state.extensions['bar91.timer']; box.timers=box.timers.filter(t=>t.id!==payload.parameters.id); }
       if (action === 'calibrate') state.setup={...state.setup,calibration:'Step 1 starting'};
       if (action === 'sub_pair') state.setup={...state.setup,sub_pairing:true};
       if (action === 'atmos_next') state.sound.atmos=(state.sound.atmos+1)%3;
@@ -767,6 +769,47 @@ try {
   const soundBox=await page.locator('.sound-grid').boundingBox();
   const setupBox=await page.locator('#room-setup').boundingBox();
   await page.screenshot({path:fileURLToPath(new URL('build/readme-advanced.png',root)),fullPage:true,clip:{x:soundBox.x,y:soundBox.y+await page.evaluate(()=>scrollY),width:soundBox.width,height:setupBox.y+setupBox.height-soundBox.y}});
+  // Timers on the bar's display (extension bar91.timer).
+  screenshotFeatures={...screenshotFeatures,extensions:[...screenshotFeatures.extensions,{id:'bar91.timer',component:'timer',included:true,actions:['bar91.timer.start','bar91.timer.cancel']}]};
+  state.extensions={...state.extensions,'bar91.timer':{timers:[]}};
+  await page.setViewportSize({width:390,height:920});
+  await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#timer-panel').hidden && !document.querySelector('#timer-start').disabled);
+  check(await page.locator('#timer-minutes').inputValue()==='5' && await page.locator('#timer-text').getAttribute('placeholder')==='TIMER!','timer defaults: 5 minutes, TIMER!');
+  await page.locator('#timer-text').fill('pâtes');
+  await page.locator('[data-minutes="10"]').click();
+  await page.locator('#timer-countdown').check();
+  await page.locator('#timer-start').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true}}),'start sends the folded text, the duration in seconds and the countdown choice');
+  check(await page.locator('#timer-text').inputValue()==='','the text field clears after a timer starts');
+  check(/^(10'00|9'5\d) · shown on the bar$/.test(await page.locator('.timer-time').textContent()),'the list shows the time left as the bar writes it');
+  const timeBefore=await page.locator('.timer-time').textContent();
+  check(await page.waitForFunction(before=>document.querySelector('.timer-time').textContent!==before,timeBefore,{timeout:3000}).then(()=>true,()=>false),'the time left counts down between updates');
+  await page.locator('#timer-text').fill('Pates');
+  await page.waitForFunction(()=>document.querySelector('#timer-start').disabled);
+  check(/A timer named PATES is already running/.test(await page.locator('#timer-state').textContent()),'a second timer with the same text is refused with a message');
+  await page.locator('#timer-text').fill('');
+  state.power='Standby';
+  await page.waitForFunction(()=>document.querySelector('#power-label').textContent==='Turn on');
+  check(!(await page.locator('#timer-start').isDisabled()) && !(await page.locator('.timer-cancel').isDisabled()),'timers can be started and cancelled with the bar in standby');
+  state.extensions['bar91.timer'].timers[0]={...state.extensions['bar91.timer'].timers[0],ringing:true,remaining_ms:0};
+  await page.waitForFunction(()=>document.querySelector('.timer-item.ringing'));
+  check(/press any key on the JBL remote/.test(await page.locator('.timer-time').textContent()) && (await page.locator('.timer-cancel').textContent())==='Stop','a ringing timer says how to stop it');
+  state.extensions['bar91.timer'].timers.push({id:'t2',text:'LESSIVE',countdown:false,remaining_ms:754000,ringing:false});
+  await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===2);
+  await page.evaluate(()=>document.activeElement.blur());
+  await page.locator('#timer-panel').screenshot({path:fileURLToPath(new URL('build/timer-panel.png',root))});
+  state.extensions['bar91.timer'].timers.pop();
+  await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
+  await page.setViewportSize({width:320,height:900});
+  check(await page.locator('#timer-panel').evaluate(panel=>{const box=panel.getBoundingClientRect();return [...panel.querySelectorAll('input,button,.timer-item')].filter(e=>e.getBoundingClientRect().height>0).every(e=>{const r=e.getBoundingClientRect();return r.left>=box.left-1 && r.right<=box.right+1;});}),'timer controls stay inside the panel at 320 px');
+  check(await page.locator('#timer-panel button').evaluateAll(buttons=>buttons.filter(b=>b.getBoundingClientRect().height>0).every(b=>b.getBoundingClientRect().height>=44)),'timer buttons have 44 px targets');
+  await page.locator('.timer-cancel').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===0);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.cancel',parameters:{id:'t1'}}),'Stop sends the timer id');
+  state.power='On';
+  await page.setViewportSize({width:1200,height:1050});
   await page.locator('.device-details summary').click();
   check(await page.locator('#manual-row').isVisible(),'manual link shown for the declared model');
   check(await page.locator('#manual-link').getAttribute('href')==='https://example.test/manual_EN.pdf','English manual for an English browser');

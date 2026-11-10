@@ -17,6 +17,7 @@ var bar91ActionAliases = map[string]string{
 	"eq_apply": "bar91.front-eq.apply", "eq_reset": "bar91.front-eq.reset",
 	"center_next":     "bar91.center-level.next",
 	"display_message": "bar91.display-message.show", "display_cancel": "bar91.display-message.cancel",
+	"timer_start": "bar91.timer.start", "timer_cancel": "bar91.timer.cancel",
 }
 
 // Model composition is explicit. A future family backend registers only the
@@ -27,6 +28,9 @@ func (r *remote) registerBar91Extensions() error {
 	}
 	r.actionAliases = bar91ActionAliases
 	if err := r.registerDisplayMessage(); err != nil {
+		return err
+	}
+	if err := r.registerTimers(); err != nil {
 		return err
 	}
 	eq := func(action string) extension.Handler[state] {
@@ -124,7 +128,8 @@ func extensionParameters(data json.RawMessage, target any) error {
 // registerDisplayMessage adds custom front-display messages (display_message.go).
 // Actions return at once; the manager shows the message in the background.
 func (r *remote) registerDisplayMessage() error {
-	r.display = newDisplayManager(barDisplayPort{r}, displayLog)
+	r.displayPort = barDisplayPort{r}
+	r.display = newDisplayManager(r.displayPort, displayLog)
 	ready := func() error {
 		if r.device == nil {
 			return errors.New("native display unavailable")
@@ -153,5 +158,35 @@ func (r *remote) registerDisplayMessage() error {
 			},
 		},
 		Run: r.display.Run,
+	})
+}
+
+// registerTimers adds timers on the front display (timer.go), built on the
+// display messages.
+func (r *remote) registerTimers() error {
+	r.timers = newTimerManager(r.display, r.displayPort, displayLog)
+	return r.extensions.Register(extension.Module[state]{
+		Descriptor: extension.Descriptor{ID: "bar91.timer", Component: "timer", Name: "Timers", Model: "bar91", Included: true, Experimental: true},
+		Actions: map[string]extension.Handler[state]{
+			"bar91.timer.start": func(ctx context.Context, data json.RawMessage) (state, error) {
+				request, err := parseTimerStart(data)
+				if err == nil && r.device == nil {
+					err = errors.New("native display unavailable")
+				}
+				if err == nil {
+					_, err = r.timers.Start(request)
+				}
+				return r.backend.snapshot(), err
+			},
+			"bar91.timer.cancel": func(ctx context.Context, data json.RawMessage) (state, error) {
+				id, err := parseTimerCancel(data)
+				if err == nil {
+					err = r.timers.Cancel(id)
+				}
+				return r.backend.snapshot(), err
+			},
+		},
+		Run:     r.timers.Run,
+		Project: func(state) any { return map[string]any{"timers": r.timers.List()} },
 	})
 }
