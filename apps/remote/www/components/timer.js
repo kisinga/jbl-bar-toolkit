@@ -53,6 +53,9 @@ export function createTimer(root, {request, supports = () => true}) {
   if (!Array.isArray(recent)) recent = [];
   recent = recent.filter(r => r && validText(r.text ?? '') && Number.isInteger(r.minutes) && r.minutes >= 1 && r.minutes <= MAX_MINUTES).slice(0, RECENT_MAX);
   let latest = null, seen = '', received = 0, problem = '', menu = null, toastTimer = null, undo = null, fresh = null;
+  // With a timer running, the new-timer form folds behind "Add another
+  // timer": several timers at once are the exception.
+  let adding = false;
   const calm = () => root.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const outbox = {timer_start: [], timer_cancel: [], timer_extend: []};
   const timers = () => latest?.state?.timers || [];
@@ -94,8 +97,8 @@ export function createTimer(root, {request, supports = () => true}) {
   function ring(fraction) {
     const s = svg('svg', {viewBox: '0 0 44 44', class: 'timer-ring', 'aria-hidden': 'true'});
     const c = 2 * Math.PI * 18;
-    s.append(svg('circle', {cx: 22, cy: 22, r: 18, class: 'timer-ring-track'}),
-      svg('circle', {cx: 22, cy: 22, r: 18, class: 'timer-ring-left', 'stroke-dasharray': c.toFixed(1), 'stroke-dashoffset': (c * (1 - Math.min(1, Math.max(0, fraction)))).toFixed(1), transform: 'rotate(-90 22 22)'}));
+    s.append(svg('circle', {cx: 22, cy: 22, r: 18, class: 'timer-ring-track'}));
+    if (fraction > 0.01) s.append(svg('circle', {cx: 22, cy: 22, r: 18, class: 'timer-ring-left', 'stroke-dasharray': c.toFixed(1), 'stroke-dashoffset': (c * (1 - Math.min(1, Math.max(0, fraction)))).toFixed(1), transform: 'rotate(-90 22 22)'})); // no dot at the start
     return s;
   }
   function button(label, className, onClick, aria) {
@@ -141,7 +144,8 @@ export function createTimer(root, {request, supports = () => true}) {
       time.append(el('span', 'timer-left', pageClock(left)));
       if (extend) time.append(button('+1 min', 'timer-add timer-add-one', () => send('timer_extend', {id: t.id, add_s: 60}), 'Add 1 minute to ' + name));
       if (fresh?.id === t.id && Date.now() < fresh.until) item.classList.add('just-started');
-      item.append(ring(left / total), words, time, more);
+      // The ring fills as the end nears (full: time's up); time added empties it a little.
+      item.append(ring(1 - left / total), words, time, more);
       if (menu === t.id) {
         const actions = el('div', 'timer-actions');
         if (extend) actions.append(button('+5 min', 'timer-add', () => send('timer_extend', {id: t.id, add_s: 300}), 'Add 5 minutes to ' + name));
@@ -242,8 +246,17 @@ export function createTimer(root, {request, supports = () => true}) {
     text.setAttribute('aria-invalid', String(!!fieldError && !d.hint));
     $('timer-state').textContent = problem || (d.error && !d.field ? d.error : !context.ready ? 'Timers need the connection to the soundbar.' : '');
     $('timer-state').hidden = !$('timer-state').textContent;
+    const running = timers().length > 0;
+    if (!running) adding = false;
+    const form = !running || adding;
+    $('timer-new').hidden = !form;
+    $('timer-new-close').hidden = !running;
+    $('timer-add-another').hidden = form;
+    $('timer-add-another').setAttribute('aria-expanded', String(form));
+    $('timer-add-another').disabled = timers().length >= MAX_TIMERS;
     renderList();
     renderRecent();
+    if (!form) $('timer-recent').hidden = true;
     renderToast();
   }
   const refresh = () => { problem = ''; if (latest) render(latest); };
@@ -253,6 +266,8 @@ export function createTimer(root, {request, supports = () => true}) {
   text.addEventListener('input', refresh);
   minutes.addEventListener('input', refresh);
   const step = delta => { const m = Number(minutes.value); minutes.value = Math.min(MAX_MINUTES, Math.max(1, (Number.isInteger(m) ? m : 5) + delta)); refresh(); };
+  $('timer-add-another').addEventListener('click', () => { adding = true; refresh(); minutes.focus(); });
+  $('timer-new-close').addEventListener('click', () => { adding = false; refresh(); $('timer-add-another').focus(); });
   $('timer-less').addEventListener('click', () => step(-1));
   $('timer-more').addEventListener('click', () => step(1));
   for (const preset of root.querySelectorAll('[data-minutes]')) preset.addEventListener('click', () => { minutes.value = preset.dataset.minutes; refresh(); });
@@ -301,6 +316,7 @@ export function createTimer(root, {request, supports = () => true}) {
         toastTimer = setTimeout(() => { hideToast(); }, TOAST_MS);
       }
       text.value = '';
+      adding = false;
       refresh();
     },
     // A refused action drops the parameters it was sent with.

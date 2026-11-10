@@ -236,7 +236,7 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .timer-recent-item svg{width:15px;height:15px;fill:var(--orange);stroke:none}
 .timer-recent-item strong{font-weight:600}
 .timer-new{display:grid;gap:14px}
-.timer-new h3{margin-bottom:-4px}
+
 .timer-dial{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .timer-step{width:52px;height:52px;min-height:52px;border-radius:50%;padding:0;font-size:1.625rem;font-weight:300;background:var(--raised)}
 .timer-minutes{display:flex;flex-direction:column;align-items:center;flex:1;min-width:0}
@@ -297,3 +297,9 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .timer-add-one{min-height:44px;padding:0 12px;border-radius:22px;font-size:var(--font-caption);font-weight:600;color:var(--teal);border-color:#8ecfc64d}
 .timer-item.just-started{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal)}
 .timer-error.timer-hint{color:var(--muted)}
+.timer-add-another{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:14px;border:1px dashed #ffffff33;background:transparent;font-size:var(--font-control)}
+.timer-add-another svg{width:18px;height:18px}
+.timer-new-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:-4px}
+.timer-new-head h3{margin:0}
+.timer-new-close{width:44px;height:44px;min-height:44px;padding:0;border:0;background:none;display:grid;place-items:center;color:var(--muted);margin:-10px -10px -10px 0}
+.timer-new-close svg{width:18px;height:18px}

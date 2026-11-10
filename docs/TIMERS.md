@@ -12,7 +12,8 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 10 November 2026, first with 
 
 The **Timers** panel reads from top to bottom:
 
-1. **Running timers**, first to end first. Each one shows a ring for the time left, its name, when it ends, its options, and the time left (`4:59`), with **+1 min** under it. **⋮** opens **+5 min** and **Cancel**, so that a stray tap does not cancel it. A ringing timer goes on top, in orange, with a large **Stop** and "or press any key on the JBL remote".
+1. **Running timers**, first to end first. Each one shows a ring that fills as the end nears (time added empties it a little), its name, when it ends, its options, and the time left (`4:59`), with **+1 min** under it. **⋮** opens **+5 min** and **Cancel**, so that a stray tap does not cancel it. A ringing timer goes on top, in orange, with a large **Stop** and "or press any key on the JBL remote".
+   With a timer running, everything below folds behind **Add another timer**, since several timers at once are the exception; it opens on the minutes, and × folds it again. It folds after each start, and opens by itself when no timer is left.
 2. **Start again**: the last four timers started from this device, in a tinted box. One tap starts one again, with its options. A timer that is running cannot start twice, so its button is off meanwhile.
 3. **New timer**:
    - **the minutes**, large, with − and + and the shortcuts 1, 3, 5, 10, 15 and 30. They can be typed, from 1 to 720;
@@ -29,7 +30,7 @@ The **Timers** panel reads from top to bottom:
      The options are kept for the next timers on this device;
    - **Start** names what it starts (`Start 5-minute timer`);
    - under it, folded, **Rings at 18:47 · what will happen?** Unfolded, three lines say what the bar does now, at the end (the text that scrolls, the chime) and how to stop it.
-4. After a start, the page scrolls to the new timer, outlined for a moment, while the form below is ready for the next one. When a timer without a name runs, the empty name is a calm hint (give this one a name), not an error. A toast says `Pizza started. Rings at 18:47.` for 8 seconds, with **Undo**, which cancels it.
+4. After a start, the form folds and the page scrolls to the new timer, outlined for a moment. When a timer without a name runs, the empty name is a calm hint (give this one a name), not an error. A toast says `Pizza started. Rings at 18:47.` for 8 seconds, with **Undo**, which cancels it.
 
 Recent timers and options live in the browser's storage: each device has its own. The panel works with the bar in standby.
 
@@ -104,5 +105,7 @@ The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
 - the minutes, presets and Start's label;
 - a name or none, a duplicate refused under the field;
 - Undo, recent timers (started again in one tap, kept after a reload, the last first), options kept;
+- the form folded behind Add another timer while timers run, opened and closed again;
+- the ring filling as the end nears, and emptying a little with time added;
 - the scroll to the timer just started, +1 min under the time left, ⋮ with +5 min and Cancel;
 - standby, a ringing timer with Stop, and 320 px.
