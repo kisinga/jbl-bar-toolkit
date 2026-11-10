@@ -438,3 +438,22 @@ func TestDisplayWritesStayInsideTheMessageFields(t *testing.T) {
 		t.Error("short text write accepted")
 	}
 }
+
+func TestDisplayMessagesTakeTurns(t *testing.T) {
+	f, m, stop := startDisplay(t, vfdLevel3None)
+	defer stop()
+	show(t, m, `{"text":"hello","id":"a","repeat":3}`)
+	waitScreen(t, f, "text:HELLO", 10*time.Second)
+	show(t, m, `{"text":"goodbye","id":"b","repeat":2}`)
+	waitIdle(t, f, m, 2*time.Minute)
+	var order []string
+	for _, s := range f.screens() {
+		if s == "text:HELLO" || s == "text:GOODBYE" {
+			order = append(order, strings.TrimPrefix(s, "text:"))
+		}
+	}
+	// Each keeps its own count; they alternate while both have passes left.
+	if got := strings.Join(order, " "); got != "HELLO GOODBYE HELLO GOODBYE HELLO" {
+		t.Fatalf("order %q", got)
+	}
+}
