@@ -399,9 +399,11 @@ try {
   await page.waitForFunction(()=>document.querySelector('#connection').dataset.state==='online');
   await pause(600);
   check(calls.length===atLoss,'reconnect never replays controls');
+  check(await page.locator('#power').evaluate(b=>b.classList.contains('on') && getComputedStyle(b).color==='rgb(241, 171, 133)'),'when the bar is on, the power button is lit (orange)');
   state.power='Standby'; await page.locator('#refresh').click();
   await page.waitForFunction(()=>document.querySelector('#power').getAttribute('aria-label')==='Turn soundbar on');
   check(await plus.isDisabled() && await page.locator('#power').isEnabled(),'standby only permits power');
+  check(await page.locator('#power').evaluate(b=>!b.classList.contains('on') && getComputedStyle(b).color==='rgb(170, 180, 197)'),'in standby the power button is grey');
   check(await page.locator('#eq-slider-0').isDisabled() && (await page.locator('#eq-state').textContent()).includes('Turn on'),'standby blocks EQ and explains why');
   check((await page.locator('#summary').textContent()).includes('standby'),'standby copy');
   state.available=false;state.power='Starting';state.error='Soundbar is starting';
