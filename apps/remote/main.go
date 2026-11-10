@@ -105,20 +105,23 @@ type remote struct {
 	// displayThroughGate lets the display messages run while the timer
 	// sound holds the gate for its Cast launch and volume (timer_sound_bar91.go).
 	displayThroughGate atomic.Bool
-	http               *server.Server[state]
-	backend            nativeControls
-	extensions         extension.Registry[state]
-	actionAliases      map[string]string
-	cfg                config
-	network            *net.IPNet
-	csrf               string
-	device             *device
-	feed               stateFeed
-	stop               <-chan struct{}
-	actionMu           sync.Mutex
-	display            *displayManager
-	displayPort        displayPort
-	timers             *timerManager
+	// timerWake: the timer sound woke the bar from standby and will put it
+	// back; the wake automation leaves the mode alone meanwhile (automation.go).
+	timerWake     atomic.Bool
+	http          *server.Server[state]
+	backend       nativeControls
+	extensions    extension.Registry[state]
+	actionAliases map[string]string
+	cfg           config
+	network       *net.IPNet
+	csrf          string
+	device        *device
+	feed          stateFeed
+	stop          <-chan struct{}
+	actionMu      sync.Mutex
+	display       *displayManager
+	displayPort   displayPort
+	timers        *timerManager
 }
 
 // This native seam preserves existing Bar 9.1 fixtures. The reusable public

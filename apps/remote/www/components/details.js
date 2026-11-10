@@ -12,6 +12,7 @@ export function createDetails(root) {
     if (value === 'WAITING_FOR_PROCESS') return 'Waiting for the soundbar';
     if (value === 'SMART_KEPT_THIS_WAKE') return 'Smart Mode kept after wake';
     if (value === 'MANUAL_MODE_THIS_WAKE') return 'Your mode choice kept after wake';
+    if (value === 'TIMER_WAKE') return 'Woken by a timer chime: mode left as it is';
     if (value === 'APPLYING_STANDARD') return 'Selecting Standard after wake…';
     if (value.startsWith('AWAKE_STABILIZING_')) return 'Checking the mode after wake…';
     if (value.startsWith('PROCESS_')) return 'Starting the watcher';

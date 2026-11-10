@@ -61,7 +61,9 @@ Recent timers and options live in the browser's storage: each device has its own
 
   **The action gate.** The changes to the bar go through the action gate, like any control, reported as "Timer sound", so they do not interleave with an EQ change or another control: first the Cast launch (which switches the source and may wake the bar) and the volume, then, afterwards, the restore. The chime rings without the gate. While the timer sound holds the gate for the launch and the volume, it lets the display messages through: those changes go through Cast and press no key, so the alarm keeps showing and a key pressed meanwhile still stops it. On the owner's bar (10 November 2026), presses during the volume change were otherwise ignored. During the restore (which may send keys), keys are not watched. Stop never waits for the gate. If another control keeps the bar busy for 10 seconds when a timer ends, the sound is skipped and the alarm shows alone.
 
-  **Afterwards**, the remote puts everything back, even when the sound was stopped early: volume and mute, then standby if the bar was in standby, or its source (TV, HDMI, Bluetooth). What it puts back is recorded before each change, so a change that failed half-way, or was stopped, is undone too. Timers that end together ring once. A Chromecast or AirPlay source is left as it is.
+  **Afterwards**, the remote puts everything back, even when the sound was stopped early: volume and mute, then standby if the bar was in standby, or its source (TV, HDMI, Bluetooth). What it puts back is recorded before each change, so a change that failed half-way, or was stopped, is undone too.
+
+  **When the chime wakes the bar from standby**, the wake automation (Standard after wake, or the remembered mode) leaves the mode alone for that wake and remembers nothing from it (status `TIMER_WAKE`): the bar goes back to standby anyway. On the owner's bar (10 November 2026), the automation selected Standard (`SMART MODE OFF`) and the bar then stayed on, on Chromecast. The restore now checks the result and tries again for up to a minute when a key is refused or not taken, and never presses power twice within 6 seconds, since it toggles. It only acts from the chime's own state: if the owner picked another source during the chime (to watch TV, say), or turned the bar off, it leaves the bar as it is. Timers that end together ring once. A Chromecast or AirPlay source is left as it is.
 - **The bar's own messages come first**, like for display messages: volume, `HELLO` on wake-up and so on.
 - **`display_cancel`** without an id stops display messages, not timers.
 
@@ -105,6 +107,8 @@ The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
   - the TV and restore rules;
   - the sound played once when its timer rings, and not for a timer without sound;
   - the parameters (mode, volume, ringing time, with defaults);
+  - the restore (`timer_restore_test.go`): a refused key tried again, power pressed once, a source put back, a source picked by the owner or a bar turned off left alone, and giving up after the time;
+  - a wake by the chime: no mode applied or remembered, and the next wake is normal again;
   - the volume (`timer_volume_test.go`): raised with a correction, never lowered, and put back with the mute after a change stopped half-way.
 - races (`timer_test.go`): a countdown held until the timer rings does not replace the alarm, and one held until a cancel does not show.
 
