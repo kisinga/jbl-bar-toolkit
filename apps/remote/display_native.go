@@ -27,6 +27,10 @@ type barDisplayPort struct{ r *remote }
 
 func (p barDisplayPort) now() time.Time { return time.Now() }
 
+func (p barDisplayPort) ownKeys() bool {
+	return p.r.device != nil && time.Now().UnixNano() < p.r.device.ownKeyUntil.Load()
+}
+
 func (p barDisplayPort) sleep(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()

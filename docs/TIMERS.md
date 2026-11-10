@@ -43,7 +43,7 @@ Recent timers and options live in the browser's storage: each device has its own
 - **The clock** is a display message whose text is rewritten in place, with no blanks between passes (display hooks `Live` and `Loop`). Like any long message, it lets other messages through between passes.
 - **Reminders** are one-pass messages under the timer's display id, their text taken when the pass starts (display hook `Fresh`): a new one replaces one that has not finished.
 - **When a timer ends**, `TIME'S UP PIZZA` scrolls in a loop, without blanks. A timer without a name shows `TIME'S UP - PRESS ANY KEY`. A name too long for both shows alone. A short text alone would not scroll, only blink between blanks, which is less striking. The alarm lasts until one of these:
-  - **any key on the JBL remote** (volume, mute, source…), on or in standby. The remote watches the bar's key flag (`13822224`), which rises on every press, also in standby, while nothing changes on the display. Only a press seen after a release counts: a key held when the alarm starts, or one the remote sends itself while it holds the action gate, does not stop it;
+  - **any key on the JBL remote** (volume, mute, source…), on or in standby. The remote watches the bar's key flag (`13822224`), which rises on every press, also in standby, while nothing changes on the display. Only a press seen after a release counts, so a key held when the alarm starts does not stop it. The flag also rises for the keys the remote sends itself (to restore the source or standby, for example): the remote notes when it sends one, and a press then does not count. A press made while another control holds the gate for a moment (the monitors take it every second) still counts, and so does the press that brings up the bar's volume over the alarm. On the owner's bar (10 November 2026), both were sometimes lost, and a second press was needed;
   - **Stop** in the page, or `bar91.timer.cancel`;
   - **10 minutes.**
 
@@ -55,7 +55,7 @@ Recent timers and options live in the browser's storage: each device has its own
   - waking from standby does not wake the TV;
   - afterwards, the bar stays on Chromecast and stays on.
 
-  **Volume.** The bar's volume is the Cast master volume: native ≈ Cast level × 32 (0.50 gave 16, 0.34 gave 11). The remote sets it through the Cast receiver and reads the native volume back, correcting by a step or two. It does this beside the playback, so the Cast connection keeps answering heartbeats; the first ring may start a moment quieter. It unmutes if needed and never lowers the volume.
+  **Volume.** The bar's volume is the Cast master volume: native ≈ Cast level × 32 (0.50 gave 16, 0.34 gave 11). The remote sets it through the Cast receiver and reads the native volume back, correcting by a step or two. It does this after the launch and before the chime, while a reader of its own keeps answering the Cast heartbeats, so the chime rings at its volume from the start: once the sound plays, the volume no longer moves by itself, and a key stops the alarm (owner's choice). It unmutes if needed and never lowers the volume.
 
   **Ringing.** The chime is loaded again each time it finishes, until the ringing time has passed. A key on the JBL remote, or Stop, ends the timer and its sound together.
 
@@ -96,11 +96,12 @@ The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
 - the 10-minute limit;
 - duplicate names, a single unnamed timer, cancel, and `display_cancel` leaving timers alone;
 - two alarms taking turns, one key each, also when the second waits behind the bar's volume screen;
+- a press during another control's short hold of the gate, and the press that brings up the volume, count; the remote's own keys do not;
 - the limit of 8 timers;
 - time added to a running timer: the clock follows and the alarm comes later; a ringing timer, an unknown id and more than 12 hours are refused;
 - the sound (`timer_sound_test.go`):
   - the chime is a valid WAV of about 2.8 s, without clipping;
-  - the Cast exchange with a simulated receiver: launch, heartbeat, load, played to the end, a refused load, and ringing again until the time is up;
+  - the Cast exchange with a simulated receiver: launch, heartbeat, the load after the volume (heartbeats answered meanwhile), played to the end, a refused load, and ringing again until the time is up;
   - the TV and restore rules;
   - the sound played once when its timer rings, and not for a timer without sound;
   - the parameters (mode, volume, ringing time, with defaults);

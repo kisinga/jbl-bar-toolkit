@@ -503,3 +503,69 @@ func TestTimerCountdownDoesNotRaceTheCancel(t *testing.T) {
 		}
 	}
 }
+
+// A press while a monitor holds the gate for a moment still counts (owner's
+// bar, 10 Nov 2026: the first press was sometimes lost).
+func TestTimerKeyDuringAGateHoldCounts(t *testing.T) {
+	f, _, tm, stop := startTimers(t, vfdLevel3None)
+	defer stop()
+	startTimer(t, tm, `{"text":"pizza","duration_s":1}`)
+	waitScreen(t, f, "text:TIME'S UP PIZZA", 20*time.Second)
+	time.Sleep(time.Second / displayScale) // the flag seen released
+	f.mu.Lock()
+	f.gateOff = true
+	f.mu.Unlock()
+	f.set(vfdKeyFlag, 1)
+	time.Sleep(200 * time.Millisecond / displayScale)
+	f.mu.Lock()
+	f.gateOff = false
+	f.mu.Unlock()
+	time.Sleep(200 * time.Millisecond / displayScale)
+	f.set(vfdKeyFlag, 0)
+	waitTimers(t, f, tm, 0, 10*time.Second)
+}
+
+// The press that brings up the bar's volume over the alarm stops it, even when
+// the volume shows before the key flag is seen.
+func TestTimerPressThatBringsTheVolumeCounts(t *testing.T) {
+	f, _, tm, stop := startTimers(t, vfdLevel3None)
+	defer stop()
+	startTimer(t, tm, `{"text":"pizza","duration_s":1}`)
+	waitScreen(t, f, "text:TIME'S UP PIZZA", 20*time.Second)
+	time.Sleep(time.Second / displayScale)
+	f.set(vfdLevel3, 9) // the volume screen, before the flag
+	waitScreen(t, f, "native-l3", 10*time.Second)
+	f.mu.Lock()
+	f.gateOff = true // the alarm, now waiting, does not poll for a moment
+	f.mu.Unlock()
+	f.set(vfdKeyFlag, 1)
+	f.mu.Lock()
+	f.gateOff = false
+	f.mu.Unlock()
+	time.Sleep(200 * time.Millisecond / displayScale)
+	f.set(vfdKeyFlag, 0)
+	waitTimers(t, f, tm, 0, 10*time.Second)
+}
+
+// Keys the remote sends itself (restoring the source, standby) raise the
+// flag too: they do not stop the alarm.
+func TestTimerOwnKeysDoNotStopTheAlarm(t *testing.T) {
+	f, _, tm, stop := startTimers(t, vfdLevel3None)
+	defer stop()
+	startTimer(t, tm, `{"text":"pizza","duration_s":1}`)
+	waitScreen(t, f, "text:TIME'S UP PIZZA", 20*time.Second)
+	f.mu.Lock()
+	f.own = true
+	f.mu.Unlock()
+	press(f)
+	time.Sleep(time.Second / displayScale)
+	if len(tm.List()) != 1 {
+		t.Fatal("the remote's own key stopped the alarm")
+	}
+	f.mu.Lock()
+	f.own = false
+	f.mu.Unlock()
+	time.Sleep(time.Second / displayScale)
+	press(f)
+	waitTimers(t, f, tm, 0, 10*time.Second)
+}

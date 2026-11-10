@@ -82,23 +82,19 @@ func (r *remote) playTimerSound(ctx context.Context, o timerSoundOptions) {
 	}
 	defer unhold()
 	var volume volumeChange
-	var adjusting sync.WaitGroup
-	launched := func() {
-		adjusting.Add(1)
-		go func() {
-			defer adjusting.Done()
-			defer unhold()
-			// After the launch: from standby, the bar is waking up now.
-			r.waitPowerOn(ctx, 6*time.Second)
-			volume = r.barVolume().raise(ctx, o.Volume)
-		}()
+	// After the launch, before the chime: from standby, the bar is waking up
+	// now; the volume is set first, so the chime rings at it from the start
+	// and a key during the sound stops the alarm (owner's choice).
+	prepare := func() {
+		defer unhold()
+		r.waitPowerOn(ctx, 6*time.Second)
+		volume = r.barVolume().raise(ctx, o.Volume)
 	}
-	err := castPlayServed(ctx, timerChime(), "audio/wav", o.RingFor, launched)
+	err := castPlayServed(ctx, timerChime(), "audio/wav", o.RingFor, prepare)
 	unhold() // the launch failed before the volume: nothing else to change
 	if err != nil && ctx.Err() == nil {
 		displayLog("Timer sound: %v", err)
 	}
-	adjusting.Wait()
 	// Put things back even when the timer was stopped (ctx ended), under the
 	// gate again: volume and mute, then the source or standby.
 	restore, cancel := context.WithTimeout(context.Background(), timerSoundRestore)
@@ -238,7 +234,7 @@ func (v volumeOps) set(ctx context.Context, target int) bool {
 // castPlayServed serves sound on a short-lived local address with a random
 // path and asks the bar's Cast receiver to play it, trying the loopback
 // address first, then the bar's network address.
-func castPlayServed(parent context.Context, sound []byte, contentType string, ringFor time.Duration, launched func()) error {
+func castPlayServed(parent context.Context, sound []byte, contentType string, ringFor time.Duration, prepare func()) error {
 	ctx, cancel := context.WithTimeout(parent, timerSoundSetup+ringFor)
 	defer cancel()
 	token := make([]byte, 16)
@@ -267,8 +263,8 @@ func castPlayServed(parent context.Context, sound []byte, contentType string, ri
 	}
 	var last error
 	for _, host := range hosts {
-		last = castPlayOnce(ctx, fmt.Sprintf("http://%s:%d%s", host, port, path), contentType, ringFor, launched)
-		launched = nil // the volume is already set
+		last = castPlayOnce(ctx, fmt.Sprintf("http://%s:%d%s", host, port, path), contentType, ringFor, prepare)
+		prepare = nil // the volume is already set
 		if last != errCastSoundFailed {
 			return last
 		}
@@ -276,7 +272,7 @@ func castPlayServed(parent context.Context, sound []byte, contentType string, ri
 	return last
 }
 
-func castPlayOnce(ctx context.Context, url, contentType string, ringFor time.Duration, launched func()) error {
+func castPlayOnce(ctx context.Context, url, contentType string, ringFor time.Duration, prepare func()) error {
 	raw, e := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", "127.0.0.1:8009")
 	if e != nil {
 		return fmt.Errorf("Cast receiver unavailable: %w", e)
@@ -291,5 +287,5 @@ func castPlayOnce(ctx context.Context, url, contentType string, ringFor time.Dur
 	if e := conn.HandshakeContext(ctx); e != nil {
 		return fmt.Errorf("Cast TLS: %w", e)
 	}
-	return castPlayConnection(conn, url, contentType, ringFor, launched)
+	return castPlayConnection(conn, url, contentType, ringFor, prepare)
 }

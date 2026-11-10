@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -82,41 +83,75 @@ func timerChime() []byte {
 }
 
 // castPlayConnection launches the Default Media Receiver on an open Cast
-// connection, calls launched (to adjust the volume), loads url and plays it
-// again each time it finishes until ringFor has passed. errCastSoundFailed
-// means the receiver refused or could not fetch the media (the caller may try
-// another address); the caller bounds the time with the connection deadline
-// and stops early by closing the connection.
-func castPlayConnection(conn net.Conn, url, contentType string, ringFor time.Duration, launched func()) error {
-	connect := map[string]any{"type": "CONNECT", "origin": map[string]any{}}
-	if e := sendCastMessageFrom(conn, castSoundSender, castConnection, "receiver-0", connect); e != nil {
-		return e
+// connection, calls prepare (it raises the volume) and waits for it, then
+// loads url and plays it again each time it finishes until ringFor has
+// passed. The chime thus starts at its volume: during the sound, any key
+// stops the alarm (owner's choice, 10 Nov 2026). Heartbeats are answered
+// meanwhile by a reader of its own. errCastSoundFailed means the receiver
+// refused or could not fetch the media (the caller may try another
+// address); the caller bounds the time with the connection deadline and
+// stops early by closing the connection. prepare has returned when it does.
+func castPlayConnection(conn net.Conn, url, contentType string, ringFor time.Duration, prepare func()) error {
+	var writing sync.Mutex
+	send := func(destination, namespace string, payload map[string]any) error {
+		writing.Lock()
+		defer writing.Unlock()
+		return sendCastMessageFrom(conn, castSoundSender, namespace, destination, payload)
 	}
-	if e := sendCastMessageFrom(conn, castSoundSender, castReceiver, "receiver-0", map[string]any{"type": "LAUNCH", "appId": castDefaultReceiver, "requestId": 1}); e != nil {
-		return e
+	type incoming struct {
+		m    castMessage
+		body map[string]any
 	}
-	// read returns the next message for this sender, answering heartbeats.
-	read := func() (castMessage, map[string]any, error) {
+	in := make(chan incoming)
+	failed := make(chan error, 1)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
 		for {
 			m, e := readCastMessage(conn)
 			if e != nil {
-				return m, nil, e
+				failed <- e
+				return
 			}
 			var body map[string]any
 			if json.Unmarshal([]byte(m.payload), &body) != nil {
 				continue
 			}
 			if m.namespace == castHeartbeat && body["type"] == "PING" {
-				if e := sendCastMessageFrom(conn, castSoundSender, castHeartbeat, m.source, map[string]any{"type": "PONG"}); e != nil {
-					return m, nil, e
+				if e := send(m.source, castHeartbeat, map[string]any{"type": "PONG"}); e != nil {
+					failed <- e
+					return
 				}
 				continue
 			}
 			if m.destination != castSoundSender && m.destination != "*" {
 				continue
 			}
-			return m, body, nil
+			select {
+			case in <- incoming{m, body}:
+			case <-stop:
+				return
+			}
 		}
+	}()
+	var lost error // the connection failed; later reads report it again
+	read := func() (castMessage, map[string]any, error) {
+		if lost != nil {
+			return castMessage{}, nil, lost
+		}
+		select {
+		case x := <-in:
+			return x.m, x.body, nil
+		case lost = <-failed:
+			return castMessage{}, nil, lost
+		}
+	}
+	connect := map[string]any{"type": "CONNECT", "origin": map[string]any{}}
+	if e := send("receiver-0", castConnection, connect); e != nil {
+		return e
+	}
+	if e := send("receiver-0", castReceiver, map[string]any{"type": "LAUNCH", "appId": castDefaultReceiver, "requestId": 1}); e != nil {
+		return e
 	}
 	transport := ""
 	for transport == "" {
@@ -142,11 +177,26 @@ func castPlayConnection(conn net.Conn, url, contentType string, ringFor time.Dur
 			}
 		}
 	}
-	if e := sendCastMessageFrom(conn, castSoundSender, castConnection, transport, connect); e != nil {
+	if e := send(transport, castConnection, connect); e != nil {
 		return e
 	}
-	if launched != nil {
-		launched()
+	if prepare != nil {
+		ready := make(chan struct{})
+		go func() {
+			defer close(ready)
+			prepare()
+		}()
+	waiting:
+		for {
+			select {
+			case <-ready:
+				break waiting
+			case <-in: // nothing to act on before the load
+			case lost = <-failed:
+				<-ready
+				return lost
+			}
+		}
 	}
 	until := time.Now().Add(ringFor)
 	request := 1
@@ -155,7 +205,7 @@ func castPlayConnection(conn net.Conn, url, contentType string, ringFor time.Dur
 		load := map[string]any{"type": "LOAD", "requestId": request, "autoplay": true, "currentTime": 0,
 			"media": map[string]any{"contentId": url, "contentType": contentType, "streamType": "BUFFERED",
 				"metadata": map[string]any{"metadataType": 0, "title": "Timer"}}}
-		return sendCastMessageFrom(conn, castSoundSender, castMedia, transport, load)
+		return send(transport, castMedia, load)
 	}
 	if e := loadMedia(); e != nil {
 		return e

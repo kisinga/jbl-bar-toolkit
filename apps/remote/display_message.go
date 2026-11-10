@@ -209,6 +209,9 @@ type displayPort interface {
 	// step returns errDisplayGate when another control holds the gate; the
 	// caller retries on its next poll.
 	step(force bool, f func(displayMem) error) error
+	// ownKeys reports whether the remote sent a key to the bar lately: the
+	// key flag rises for those too, so they must not stop a message.
+	ownKeys() bool
 	now() time.Time
 	sleep(ctx context.Context, d time.Duration) error
 }
@@ -480,14 +483,12 @@ func (m *displayManager) waitFree(job *displayJob) error {
 	if h.StopOnKey {
 		poll = displayKeyPoll
 	}
-	// A key still down from before the wait (the press that stopped the
-	// message shown before this one) does not count.
-	job.armed = false
 	for free < displayFreeFor {
 		if !deadline.IsZero() && !m.port.now().Before(deadline) {
 			return errDisplayBusy
 		}
 		key := false
+		own := m.port.ownKeys()
 		err := m.port.step(false, func(mem displayMem) error {
 			if h.StopOnKey {
 				// Keys count while the bar shows its own screen too: a volume
@@ -504,7 +505,7 @@ func (m *displayManager) waitFree(job *displayJob) error {
 					return e
 				}
 				switch {
-				case sel == vfdMessageCustom:
+				case sel == vfdMessageCustom || own:
 					job.armed = false
 				case !down:
 					job.armed = true
@@ -522,9 +523,10 @@ func (m *displayManager) waitFree(job *displayJob) error {
 			}
 			return e
 		})
-		if err == errDisplayGate {
-			job.armed = false
-		} else if err != nil {
+		// The gate alone does not disarm: monitors take it every second, and a
+		// press made then was lost (owner's bar, 10 Nov 2026). Keys the remote
+		// sends itself are told apart by ownKeys.
+		if err != nil && err != errDisplayGate {
 			return err
 		}
 		if key {
@@ -604,17 +606,21 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 			return errDisplayStopped
 		}
 		var deferred, key bool
+		own := m.port.ownKeys()
 		err := m.port.step(false, func(mem displayMem) error {
 			if h.StopOnKey {
-				// Only a press seen after a release counts: the flag may still
-				// be set by a key the remote itself sent while it held the gate.
+				// Only a press seen after a release counts, and none while the
+				// remote sends keys itself (the flag rises for those too).
 				down, e := mem.keyDown()
 				if e != nil {
 					return e
 				}
-				if !down {
+				switch {
+				case own:
+					job.armed = false
+				case !down:
 					job.armed = true
-				} else if job.armed {
+				case job.armed:
 					key = true
 				}
 			}
@@ -656,9 +662,10 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 			}
 			return mem.write32(vfdTempTick, t)
 		})
-		if err == errDisplayGate {
-			job.armed = false
-		} else if err != nil {
+		// The gate alone does not disarm: monitors take it every second, and a
+		// press made then was lost (owner's bar, 10 Nov 2026). Keys the remote
+		// sends itself are told apart by ownKeys.
+		if err != nil && err != errDisplayGate {
 			return err
 		}
 		if key {
@@ -738,6 +745,10 @@ func (m *displayManager) run(job *displayJob) {
 						m.release(job)
 						m.yield(job)
 						if err = m.acquire(job, m.budget(job)); err == nil {
+							// Another message of ours showed meanwhile: a key
+							// still down (the press that stopped it) is not
+							// for this one.
+							job.armed = false
 							err = m.waitFree(job)
 						}
 						if err != nil {

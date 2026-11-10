@@ -81,6 +81,9 @@ type state struct {
 	CSRF          string           `json:"csrf"`
 }
 type device struct {
+	// ownKeyUntil (Unix ns): the remote sent a key, which raises the bar's key
+	// flag like a press on the JBL remote, until about then.
+	ownKeyUntil       atomic.Int64
 	automation        *automationState
 	automationRunning bool
 	// manualModes counts Standard/Smart selections not made by the automation;
@@ -468,12 +471,35 @@ func (d *device) snapshotCurrent() state {
 	return s
 }
 func (d *device) snapshot() state { d.mu.Lock(); defer d.mu.Unlock(); return d.snapshotLocked() }
+
+// markOwnKey extends the time the remote's own keys may show on the flag.
+func (d *device) markOwnKey(hold time.Duration) {
+	until := time.Now().Add(hold).UnixNano()
+	for {
+		old := d.ownKeyUntil.Load()
+		if old >= until || d.ownKeyUntil.CompareAndSwap(old, until) {
+			return
+		}
+	}
+}
+
 func (d *device) cli(ctx context.Context, args ...string) error {
 	if !d.same() {
 		return errors.New("soundbar restarted")
 	}
 	if len(args) > 0 && args[0] == "mw.iom.se" && controlBusy() {
 		return errors.New("Smart Mode automation is busy; retry shortly")
+	}
+	if len(args) > 0 && args[0] == "mw.iom.se" {
+		// The key and its hold, plus a margin for the flag to fall.
+		hold := 1500 * time.Millisecond
+		if len(args) > 2 {
+			if ms, e := strconv.Atoi(args[2]); e == nil && ms > 0 {
+				hold += time.Duration(ms) * time.Millisecond
+			}
+		}
+		d.markOwnKey(hold)
+		defer d.markOwnKey(1500 * time.Millisecond)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()

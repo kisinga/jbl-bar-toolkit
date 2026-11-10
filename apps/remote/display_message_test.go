@@ -19,6 +19,7 @@ type fakeDisplay struct {
 	mem     map[int64]uint32
 	text    string
 	gateOff bool     // simulate another control holding the gate
+	own     bool     // simulate keys the remote sends itself
 	shown   []string // text visible on screen at each change
 	visible string   // what the screen shows now
 	trace   []string // level-2 / level-3 changes, for failures
@@ -34,6 +35,12 @@ func newFakeDisplay(level3 uint32) *fakeDisplay {
 
 func (f *fakeDisplay) now() time.Time {
 	return f.origin.Add(time.Since(f.origin) * displayScale)
+}
+
+func (f *fakeDisplay) ownKeys() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.own
 }
 
 func (f *fakeDisplay) sleep(ctx context.Context, d time.Duration) error {

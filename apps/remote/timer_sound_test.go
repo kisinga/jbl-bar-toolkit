@@ -67,6 +67,10 @@ func fakeReceiver(t *testing.T, conn net.Conn, loadReply string, got chan<- map[
 		var body map[string]any
 		_ = json.Unmarshal([]byte(m.payload), &body)
 		switch body["type"] {
+		case "CONNECT":
+			if m.destination == "web-7" { // the app's transport: a heartbeat comes during prepare
+				send(castHeartbeat, `{"type":"PING"}`)
+			}
 		case "LAUNCH":
 			send(castHeartbeat, `{"type":"PING"}`)
 			send(castReceiver, `{"type":"RECEIVER_STATUS","requestId":1,"status":{"applications":[{"appId":"CC1AD845","transportId":"web-7","namespaces":[{"name":"urn:x-cast:com.google.cast.media"}]}]}}`)
@@ -112,6 +116,9 @@ func TestCastPlayConnection(t *testing.T) {
 			t.Fatalf("heartbeat not answered: %v", pong)
 		}
 		load := <-got
+		for load["type"] == "PONG" {
+			load = <-got
+		}
 		media, _ := load["media"].(map[string]any)
 		if load["type"] != "LOAD" || load["autoplay"] != true || media["contentId"] != "http://127.0.0.1:4567/x.wav" || media["contentType"] != "audio/wav" {
 			t.Fatalf("load %v", load)
@@ -213,5 +220,36 @@ func TestTimerSoundParameter(t *testing.T) {
 		if _, err := parseTimerStart(json.RawMessage(in)); err == nil {
 			t.Errorf("%s accepted", in)
 		}
+	}
+}
+
+// The volume is set before the chime: the load waits for prepare, and the
+// heartbeats that come meanwhile are answered.
+func TestCastPlayLoadsAfterPrepare(t *testing.T) {
+	client, receiver := net.Pipe()
+	got := make(chan map[string]any, 16)
+	go fakeReceiver(t, receiver, "ok", got)
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	var prepared time.Time
+	err := castPlayConnection(client, "http://x/y.wav", "audio/wav", 0, func() {
+		time.Sleep(200 * time.Millisecond)
+		prepared = time.Now()
+	})
+	client.Close()
+	receiver.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pongs, loads := 0, 0
+	for len(got) > 0 {
+		switch (<-got)["type"] {
+		case "PONG":
+			pongs++
+		case "LOAD":
+			loads++
+		}
+	}
+	if prepared.IsZero() || pongs < 2 || loads != 1 {
+		t.Fatalf("prepared %v, %d pongs, %d loads", prepared, pongs, loads)
 	}
 }
