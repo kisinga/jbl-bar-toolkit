@@ -162,7 +162,9 @@
     "timer-countdown",
     "timer-start",
     "timer-state",
-    "timer-list"
+    "timer-list",
+    "timer-sound",
+    "timer-sound-hint"
   ],
   "actions": [
     "atmos_next",

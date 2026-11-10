@@ -36,6 +36,7 @@ type barTimer struct {
 	ID        string
 	Text      string
 	Countdown bool
+	Sound     string // timerSoundOff, timerSoundUnlessTV or timerSoundAlways
 	Deadline  time.Time
 	Ringing   bool
 	cancel    context.CancelFunc
@@ -46,6 +47,7 @@ type timerStatus struct {
 	ID          string `json:"id"`
 	Text        string `json:"text"`
 	Countdown   bool   `json:"countdown"`
+	Sound       string `json:"sound"`
 	RemainingMS int64  `json:"remaining_ms"`
 	Ringing     bool   `json:"ringing"`
 }
@@ -58,6 +60,8 @@ type timerManager struct {
 	root    context.Context
 	next    int
 	timers  map[string]*barTimer
+	// sound plays the end-of-timer sound (timer_sound_bar91.go); nil: none.
+	sound func(ctx context.Context, mode string)
 }
 
 func newTimerManager(display *displayManager, port displayPort, logf func(string, ...any)) *timerManager {
@@ -120,6 +124,7 @@ type timerRequest struct {
 	Text      string
 	For       time.Duration
 	Countdown bool
+	Sound     string
 }
 
 func parseTimerStart(data json.RawMessage) (timerRequest, error) {
@@ -127,14 +132,21 @@ func parseTimerStart(data json.RawMessage) (timerRequest, error) {
 		Text      string `json:"text"`
 		DurationS *int   `json:"duration_s"`
 		Countdown bool   `json:"countdown"`
+		Sound     string `json:"sound"`
 	}
 	if err := extensionParameters(data, &p); err != nil {
 		return timerRequest{}, err
 	}
+	if p.Sound == "" {
+		p.Sound = timerSoundOff
+	}
+	if !validTimerSound(p.Sound) {
+		return timerRequest{}, errors.New("sound: off, unless_tv or always")
+	}
 	if p.DurationS == nil || *p.DurationS < 1 || time.Duration(*p.DurationS)*time.Second > timerMaxDuration {
 		return timerRequest{}, errors.New("duration_s: 1 to 43200 (12 h)")
 	}
-	r := timerRequest{For: time.Duration(*p.DurationS) * time.Second, Countdown: p.Countdown}
+	r := timerRequest{For: time.Duration(*p.DurationS) * time.Second, Countdown: p.Countdown, Sound: p.Sound}
 	if strings.TrimSpace(p.Text) != "" { // no name: the alarm says TIME'S UP - PRESS ANY KEY
 		text, err := displayText(p.Text)
 		if err != nil {
@@ -178,7 +190,10 @@ func (m *timerManager) Start(r timerRequest) (string, error) {
 		return "", fmt.Errorf("at most %d timers at a time", timerMaxCount)
 	}
 	m.next++
-	t := &barTimer{ID: fmt.Sprintf("t%d", m.next), Text: r.Text, Countdown: r.Countdown, Deadline: m.port.now().Add(r.For)}
+	if r.Sound == "" {
+		r.Sound = timerSoundOff
+	}
+	t := &barTimer{ID: fmt.Sprintf("t%d", m.next), Text: r.Text, Countdown: r.Countdown, Sound: r.Sound, Deadline: m.port.now().Add(r.For)}
 	ctx, cancel := context.WithCancel(m.root)
 	t.cancel = cancel
 	m.timers[t.ID] = t
@@ -212,7 +227,7 @@ func (m *timerManager) List() []timerStatus {
 		if left < 0 || t.Ringing {
 			left = 0
 		}
-		out = append(out, timerStatus{ID: t.ID, Text: t.Text, Countdown: t.Countdown, RemainingMS: left.Milliseconds(), Ringing: t.Ringing})
+		out = append(out, timerStatus{ID: t.ID, Text: t.Text, Countdown: t.Countdown, Sound: t.Sound, RemainingMS: left.Milliseconds(), Ringing: t.Ringing})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].RemainingMS != out[j].RemainingMS {
@@ -242,7 +257,13 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 		return
 	}
 	t.Ringing = true
+	root := m.root
 	m.mu.Unlock()
+	if t.Sound != timerSoundOff && m.sound != nil {
+		// In the background: the alarm text shows meanwhile (a wake-up from
+		// standby replays its pass, like any message).
+		go m.sound(root, t.Sound)
+	}
 	// Same display id: the alarm replaces the countdown or a reminder.
 	done := func(reason string) {
 		if reason != "cancelled" {

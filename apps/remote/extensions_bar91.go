@@ -165,6 +165,7 @@ func (r *remote) registerDisplayMessage() error {
 // display messages.
 func (r *remote) registerTimers() error {
 	r.timers = newTimerManager(r.display, r.displayPort, displayLog)
+	r.timers.sound = r.playTimerSound
 	return r.extensions.Register(extension.Module[state]{
 		Descriptor: extension.Descriptor{ID: "bar91.timer", Component: "timer", Name: "Timers", Model: "bar91", Included: true, Experimental: true},
 		Actions: map[string]extension.Handler[state]{

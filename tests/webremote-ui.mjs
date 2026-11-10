@@ -73,7 +73,7 @@ const server = createServer(async (req, res) => {
       if (action === 'smart') state.mode='Smart';
       if (action === 'standard') state.mode='Standard';
       if (action === 'av_sync_set') state.sound.av_sync_ms=payload.value;
-      if (action === 'bar91.timer.start') { const timers=state.extensions['bar91.timer'].timers; timers.push({id:'t'+(timers.length+1),text:payload.parameters.text??'',countdown:payload.parameters.countdown,remaining_ms:payload.parameters.duration_s*1000,ringing:false}); }
+      if (action === 'bar91.timer.start') { const timers=state.extensions['bar91.timer'].timers; timers.push({id:'t'+(timers.length+1),text:payload.parameters.text??'',countdown:payload.parameters.countdown,sound:payload.parameters.sound??'off',remaining_ms:payload.parameters.duration_s*1000,ringing:false}); }
       if (action === 'bar91.timer.cancel') { const box=state.extensions['bar91.timer']; box.timers=box.timers.filter(t=>t.id!==payload.parameters.id); }
       if (action === 'calibrate') state.setup={...state.setup,calibration:'Step 1 starting'};
       if (action === 'sub_pair') state.setup={...state.setup,sub_pairing:true};
@@ -781,9 +781,9 @@ try {
   await page.locator('#timer-countdown').check();
   await page.locator('#timer-start').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true}}),'start sends the folded text, the duration in seconds and the countdown choice');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true,sound:'unless_tv'}}),'start sends the folded text, the duration in seconds, the countdown choice and the sound (unless TV by default)');
   check(await page.locator('#timer-text').inputValue()==='','the text field clears after a timer starts');
-  check(/^(10'00|9'5\d) · shown on the bar$/.test(await page.locator('.timer-time').textContent()),'the list shows the time left as the bar writes it');
+  check(/^(10'00|9'5\d) · shown on the bar · sound unless TV$/.test(await page.locator('.timer-time').textContent()),'the list shows the time left as the bar writes it');
   const timeBefore=await page.locator('.timer-time').textContent();
   check(await page.waitForFunction(before=>document.querySelector('.timer-time').textContent!==before,timeBefore,{timeout:3000}).then(()=>true,()=>false),'the time left counts down between updates');
   await page.locator('#timer-text').fill('Pates');
@@ -792,9 +792,10 @@ try {
   await page.locator('#timer-text').fill('');
   await page.locator('[data-minutes="1"]').click();
   await page.locator('#timer-countdown').uncheck();
+  await page.locator('#timer-sound').selectOption('off');
   await page.locator('#timer-start').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===2);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{duration_s:60,countdown:false}}),'a timer without a name sends no text');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{duration_s:60,countdown:false,sound:'off'}}),'a timer without a name sends no text; the sound can be turned off');
   check(await page.locator('.timer-name').evaluateAll(names=>names.some(n=>n.textContent==='Timer')),'a timer without a name is listed as Timer');
   await page.waitForFunction(()=>document.querySelector('#timer-start').disabled);
   check(/A timer without a name is already running/.test(await page.locator('#timer-state').textContent()),'a second timer without a name is refused with a message');

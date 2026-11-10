@@ -19,6 +19,11 @@ The **Timers** panel has:
   - **several running**: once a minute, a round where each timer with the option shows its name and time left, in turn: `LESSIVE 12'57`, then `PIZZA 4'59`. Each time is taken when its own pass starts, so it is not stale by the earlier passes of the round, and the last minute is included. Rounds follow the whole minutes of the first timer to end that has a minute or more left;
   - the display switches between the two as timers start and end.
 
+- **Sound at the end**:
+  - **Unless watching TV** (default in the page): a chime rings, except when the bar is on with TV, optical or HDMI, so a film is never cut;
+  - **Always**: it rings even during a film;
+  - **Off**.
+
 Running timers are listed with their time left and a Cancel button. A ringing timer offers Stop. The panel works with the bar in standby.
 
 ## Rules
@@ -32,21 +37,27 @@ Running timers are listed with their time left and a Cancel button. A ringing ti
   - **10 minutes.**
 
   Several timers that end together take turns on the display, like messages. A key stops the one being shown.
+- **The sound** is a "dring dring" chime (about 2.8 s, a WAV made by the remote itself). The remote serves it for the time of the sound, on a short-lived local address with a random path. It then asks the bar's own Cast receiver (`127.0.0.1:8009`, Default Media Receiver) to play it, trying the loopback address first, then the bar's network address. This was qualified with `catt` on 10 November 2026:
+  - the bar plays it on or from standby, at its own volume;
+  - waking from standby does not wake the TV;
+  - afterwards, the bar stays on Chromecast and stays on.
+
+  So the remote then puts it back: standby if it was in standby, or its source (TV, HDMI, Bluetooth). It does this under the action gate, reported as "Timer sound". Timers that end together ring once. A Chromecast or AirPlay source is left as it is.
 - **The bar's own messages come first**, like for display messages: volume, `HELLO` on wake-up and so on.
 - **`display_cancel`** without an id stops display messages, not timers.
 
 ## API
 
-`GET /api/features` lists the `bar91.timer` extension. The state carries the timers under `extensions["bar91.timer"].timers`. Each entry has `id`, `text` (empty without a name), `countdown`, `remaining_ms` (as of that state) and `ringing`.
+`GET /api/features` lists the `bar91.timer` extension. The state carries the timers under `extensions["bar91.timer"].timers`. Each entry has `id`, `text` (empty without a name), `countdown`, `sound`, `remaining_ms` (as of that state) and `ringing`.
 
 ```json
-{"action":"bar91.timer.start","parameters":{"text":"Pizza","duration_s":600,"countdown":true}}
+{"action":"bar91.timer.start","parameters":{"text":"Pizza","duration_s":600,"countdown":true,"sound":"unless_tv"}}
 {"action":"bar91.timer.start","parameters":{"duration_s":300}}
 {"action":"bar91.timer.cancel","parameters":{"id":"t1"}}
 ```
 
 The short aliases are `timer_start` and `timer_cancel`.
-- **Start:** `duration_s` is required (1 to 43200). `text` and `countdown` are optional.
+- **Start:** `duration_s` is required (1 to 43200). `text`, `countdown` and `sound` (`off`, the default for the API, `unless_tv` or `always`) are optional.
 - **Refused:** an invalid name, a name already in use (or a second timer without a name), a ninth timer, an unknown id and unknown fields.
 
 ## Tests
@@ -64,6 +75,12 @@ The short aliases are `timer_start` and `timer_cancel`.
 - the 10-minute limit;
 - duplicate names, a single unnamed timer, cancel, and `display_cancel` leaving timers alone;
 - two alarms taking turns;
-- the limit of 8 timers.
+- the limit of 8 timers;
+- the sound (`timer_sound_test.go`):
+  - the chime is a valid WAV of about 2.8 s, without clipping;
+  - the Cast exchange with a simulated receiver: launch, heartbeat, load, played to the end, and a refused load;
+  - the TV and restore rules;
+  - the sound played once when its timer rings, and not for a timer without sound;
+  - the parameter.
 
 `tests/webremote-ui.mjs` covers the panel: a name or none, a duplicate refused, standby, a ringing timer, and 320 px.

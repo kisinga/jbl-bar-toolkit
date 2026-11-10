@@ -15,7 +15,7 @@ export const timerClock = ms => {
 };
 export function createTimer(root, {request}) {
   const $ = id => byId(root, id);
-  const text = $('timer-text'), minutes = $('timer-minutes'), countdown = $('timer-countdown'), start = $('timer-start'), list = $('timer-list');
+  const text = $('timer-text'), minutes = $('timer-minutes'), countdown = $('timer-countdown'), sound = $('timer-sound'), start = $('timer-start'), list = $('timer-list');
   let latest = null, seen = '', received = 0, cancelling = null, starting = null, problem = '';
   const timers = () => latest?.state?.timers || [];
   function draft() {
@@ -25,7 +25,7 @@ export function createTimer(root, {request}) {
     if (!Number.isInteger(m) || m < 1 || m > MAX_MINUTES) return {error: 'Duration: 1 to 720 minutes.'};
     if (timers().some(t => t.text === name)) return {error: name ? 'A timer named ' + name + ' is already running. Choose another name.' : 'A timer without a name is already running. Give this one a name.'};
     if (timers().length >= 8) return {error: 'At most 8 timers at a time.'};
-    return {parameters: {...(name ? {text: name} : {}), duration_s: m * 60, countdown: countdown.checked}};
+    return {parameters: {...(name ? {text: name} : {}), duration_s: m * 60, countdown: countdown.checked, sound: sound.value}};
   }
   function renderList() {
     const now = Date.now();
@@ -37,7 +37,7 @@ export function createTimer(root, {request}) {
       name.className = 'timer-name'; name.textContent = t.text || 'Timer';
       const time = root.ownerDocument.createElement('span');
       time.className = 'timer-time';
-      time.textContent = t.ringing ? 'Ringing · press any key on the JBL remote' : timerClock(t.remaining_ms - (now - received)) + (t.countdown ? ' · shown on the bar' : '');
+      time.textContent = t.ringing ? 'Ringing · press any key on the JBL remote' : timerClock(t.remaining_ms - (now - received)) + (t.countdown ? ' · shown on the bar' : '') + (t.sound === 'always' ? ' · sound' : t.sound === 'unless_tv' ? ' · sound unless TV' : '');
       const cancel = root.ownerDocument.createElement('button');
       cancel.type = 'button'; cancel.className = 'timer-cancel'; cancel.dataset.timer = t.id;
       cancel.textContent = cancelling === t.id ? 'Cancelling…' : t.ringing ? 'Stop' : 'Cancel';
@@ -66,6 +66,7 @@ export function createTimer(root, {request}) {
   text.addEventListener('input', refresh);
   minutes.addEventListener('input', refresh);
   countdown.addEventListener('change', refresh);
+  sound.addEventListener('change', refresh);
   for (const preset of root.querySelectorAll('[data-minutes]')) preset.addEventListener('click', () => { minutes.value = preset.dataset.minutes; refresh(); });
   start.addEventListener('click', () => {
     const d = draft();

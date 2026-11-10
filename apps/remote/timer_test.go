@@ -94,11 +94,11 @@ func TestTimerTexts(t *testing.T) {
 
 func TestTimerParameters(t *testing.T) {
 	r, err := parseTimerStart(json.RawMessage(`{"duration_s":300}`))
-	if err != nil || r != (timerRequest{For: 5 * time.Minute}) {
+	if err != nil || r != (timerRequest{For: 5 * time.Minute, Sound: "off"}) {
 		t.Fatalf("no name: %+v %v", r, err)
 	}
 	r, err = parseTimerStart(json.RawMessage(`{"text":"pâtes","duration_s":600,"countdown":true}`))
-	if err != nil || r != (timerRequest{Text: "PATES", For: 10 * time.Minute, Countdown: true}) {
+	if err != nil || r != (timerRequest{Text: "PATES", For: 10 * time.Minute, Countdown: true, Sound: "off"}) {
 		t.Fatalf("folded text: %+v %v", r, err)
 	}
 	for _, in := range []string{`{}`, `{"duration_s":0}`, `{"duration_s":43201}`, `{"duration_s":60,"text":"50%"}`, `{"duration_s":60,"text":"STOP!"}`, `{"duration_s":60,"text":"A:B"}`, `{"duration_s":60,"color":"red"}`} {
@@ -188,7 +188,12 @@ func TestTimerAloneShowsItsClockSecondBySecond(t *testing.T) {
 	defer stop()
 	startTimer(t, tm, `{"text":"pizza","duration_s":6,"countdown":true}`)
 	waitScreen(t, f, "text:TIME'S UP PIZZA", time.Minute)
-	got := screensOf(f)
+	var got []string
+	for _, s := range screensOf(f) {
+		if s != "0'00" { // may show for an instant before the alarm
+			got = append(got, s)
+		}
+	}
 	want := []string{"0'06", "0'05", "0'04", "0'03", "0'02", "0'01", "TIME'S UP PIZZA"}
 	// The clock starts within a second of the start: allow 0'06 to be missed.
 	if j := strings.Join(got, "|"); j != strings.Join(want, "|") && j != strings.Join(want[1:], "|") {
