@@ -115,6 +115,9 @@ type displayHooks struct {
 	// StopOnKey ends the message when a key of the bar's remote is pressed,
 	// on or in standby.
 	StopOnKey bool
+	// Loop shows the passes back to back, without the blank between them
+	// (a long text then scrolls continuously).
+	Loop bool
 	// Done is called once when the message ends: "done", "key", "cancelled",
 	// "busy" or "error".
 	Done func(reason string)
@@ -645,7 +648,7 @@ func (m *displayManager) run(job *displayJob) {
 		end(err)
 		return
 	}
-	passTime, gap := displayPassTime(r.Text), displayGap
+	passTime, gap, loop := displayPassTime(r.Text), displayGap, job.hooks().Loop
 	for m.more(job) {
 		err := m.show(job, r.Text, passTime)
 		if err == nil {
@@ -661,7 +664,10 @@ func (m *displayManager) run(job *displayJob) {
 					return
 				}
 			} else {
-				if err = m.show(job, " ", gap); err == nil {
+				if !loop {
+					err = m.show(job, " ", gap)
+				}
+				if err == nil {
 					if m.waiting() {
 						// A long or endless message lets queued messages through.
 						m.release(job)

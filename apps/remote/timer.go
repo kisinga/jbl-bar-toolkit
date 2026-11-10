@@ -13,9 +13,9 @@ import (
 
 // Timers on the front display (extension bar91.timer). A timer counts down in
 // the remote and, on request, shows the minutes left once a minute
-// (PATES 4 MIN, one pass). When it ends, its text shows until a key of the
-// bar's remote is pressed (on or in standby), it is cancelled, or 10 minutes
-// pass. Qualified on the owner's Bar 9.1 on 10 Nov 2026: the key flag
+// (4 MIN, one pass). When it ends, TIME'S UP and its text scroll in a loop
+// until a key of the bar's remote is pressed (on or in standby), it is
+// cancelled, or 10 minutes pass. Qualified on the owner's Bar 9.1 on 10 Nov 2026: the key flag
 // (vfdKeyFlag) rises on every key press, also in standby. A countdown
 // rewritten every second does not work: a text longer than the display
 // scrolls and each rewrite restarts it. Timers do not survive a restart.
@@ -78,13 +78,24 @@ func (m *timerManager) Run(ctx context.Context) {
 	m.mu.Unlock()
 }
 
-// timerReminder is the once-a-minute reminder: PATES 4 MIN.
-func timerReminder(name string, minutes int) string {
+// timerReminder is the once-a-minute reminder, time first so that it does not
+// read as the alarm: 4 MIN with one timer running, 4 MIN LEFT PATES with
+// several (owner's choice, 10 Nov 2026).
+func timerReminder(name string, minutes int, several bool) string {
 	left := fmt.Sprintf("%d MIN", minutes)
-	if len(name)+1+len(left) <= displayTextMax {
-		return name + " " + left
+	if several && len(left)+len(" LEFT ")+len(name) <= displayTextMax {
+		return left + " LEFT " + name
 	}
 	return left
+}
+
+// timerAlarmText is long enough to scroll on the display (a short text only
+// blinks between passes): TIME'S UP PATES.
+func timerAlarmText(name string) string {
+	if text := "TIME'S UP " + name; len(text) <= displayTextMax {
+		return text
+	}
+	return name
 }
 
 type timerRequest struct {
@@ -212,7 +223,10 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 		if m.port.sleep(ctx, t.Deadline.Add(-time.Duration(minutes)*time.Minute).Sub(m.port.now())) != nil {
 			return // cancelled
 		}
-		if err := m.display.Show(displayRequest{ID: displayID, Text: timerReminder(t.Text, minutes), Mode: displayPasses, Passes: 1}); err != nil {
+		m.mu.Lock()
+		several := len(m.timers) > 1
+		m.mu.Unlock()
+		if err := m.display.Show(displayRequest{ID: displayID, Text: timerReminder(t.Text, minutes, several), Mode: displayPasses, Passes: 1}); err != nil {
 			m.logf("Timer %s: reminder not shown: %v", t.Text, err)
 		}
 	}
@@ -233,8 +247,8 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 		}
 		m.remove(t)
 	}
-	err := m.display.Show(displayRequest{ID: displayID, Text: t.Text, Mode: displayUntil, For: timerAlarmFor, Passes: 1,
-		Hooks: &displayHooks{StopOnKey: true, Done: done}})
+	err := m.display.Show(displayRequest{ID: displayID, Text: timerAlarmText(t.Text), Mode: displayUntil, For: timerAlarmFor, Passes: 1,
+		Hooks: &displayHooks{StopOnKey: true, Loop: true, Done: done}})
 	if err != nil {
 		m.logf("Timer %s: alarm not shown: %v", t.Text, err)
 		m.remove(t)

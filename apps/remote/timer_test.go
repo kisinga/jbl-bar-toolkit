@@ -58,12 +58,29 @@ func press(f *fakeDisplay) {
 	f.set(vfdKeyFlag, 0)
 }
 
-func TestTimerReminderText(t *testing.T) {
-	if got := timerReminder("PATES", 4); got != "PATES 4 MIN" {
-		t.Errorf("with the name: %q", got)
+func TestTimerTexts(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		minutes int
+		several bool
+		want    string
+	}{
+		{"PATES", 4, false, "4 MIN"},
+		{"PATES", 4, true, "4 MIN LEFT PATES"},
+		{strings.Repeat("A", 25), 12, true, "12 MIN"},
+	} {
+		if got := timerReminder(c.name, c.minutes, c.several); got != c.want {
+			t.Errorf("timerReminder(%q, %d, %v) = %q, want %q", c.name, c.minutes, c.several, got, c.want)
+		}
 	}
-	if got := timerReminder(strings.Repeat("A", 28), 12); got != "12 MIN" {
-		t.Errorf("name too long for 31 characters: %q", got)
+	if got := timerAlarmText("PATES"); got != "TIME'S UP PATES" {
+		t.Errorf("alarm: %q", got)
+	}
+	if got := timerAlarmText(strings.Repeat("A", 25)); got != strings.Repeat("A", 25) {
+		t.Errorf("alarm with a long name: %q", got)
+	}
+	if _, err := displayText(timerAlarmText("PATES")); err != nil {
+		t.Errorf("the alarm text must pass the display rules: %v", err)
 	}
 }
 
@@ -96,14 +113,20 @@ func TestTimerRingsUntilAKeyIsPressed(t *testing.T) {
 	if l := tm.List(); len(l) != 1 || l[0].Ringing || l[0].RemainingMS <= 0 {
 		t.Fatalf("running: %+v", l)
 	}
-	if count(f.screens(), "text:PATES") != 0 {
+	if count(f.screens(), "text:TIME'S UP PATES") != 0 {
 		t.Fatal("shown before the end without countdown")
 	}
-	waitScreen(t, f, "text:PATES", 20*time.Second)
+	waitScreen(t, f, "text:TIME'S UP PATES", 20*time.Second)
 	if l := tm.List(); len(l) != 1 || !l[0].Ringing || l[0].RemainingMS != 0 {
 		t.Fatalf("ringing: %+v", l)
 	}
-	time.Sleep(2 * time.Second / displayScale)
+	time.Sleep(20 * time.Second / displayScale) // more than two passes
+	alarm := f.screens()
+	for i, s := range alarm {
+		if s == "text: " && i > 0 && alarm[i-1] == "text:TIME'S UP PATES" {
+			t.Fatalf("a blank between alarm passes: %v", alarm)
+		}
+	}
 	press(f)
 	waitTimers(t, f, tm, 0, 10*time.Second)
 	waitScreen(t, f, "black", 10*time.Second)
@@ -117,7 +140,7 @@ func TestTimerKeyHeldBeforeTheAlarmDoesNotStopIt(t *testing.T) {
 	defer stop()
 	f.set(vfdKeyFlag, 1) // a key held (or sent by the remote) when the alarm starts
 	startTimer(t, tm, `{"duration_s":1}`)
-	waitScreen(t, f, "text:TIMER", 20*time.Second)
+	waitScreen(t, f, "text:TIME'S UP TIMER", 20*time.Second)
 	time.Sleep(2 * time.Second / displayScale)
 	if len(tm.List()) != 1 {
 		t.Fatal("a key already down stopped the alarm")
@@ -132,7 +155,7 @@ func TestTimerAlarmEndsAfterTenMinutes(t *testing.T) {
 	f, _, tm, stop := startTimers(t, vfdLevel3None)
 	defer stop()
 	startTimer(t, tm, `{"duration_s":1}`)
-	waitScreen(t, f, "text:TIMER", 20*time.Second)
+	waitScreen(t, f, "text:TIME'S UP TIMER", 20*time.Second)
 	start := f.now()
 	waitTimers(t, f, tm, 0, 15*time.Minute)
 	// Counted from the end of the timer; the screen shows it a moment later.
@@ -145,16 +168,17 @@ func TestTimerRemindsOnceAMinute(t *testing.T) {
 	f, m, tm, stop := startTimers(t, vfdLevel3None)
 	defer stop()
 	startTimer(t, tm, `{"text":"pates","duration_s":185,"countdown":true}`)
-	waitScreen(t, f, "text:PATES", 5*time.Minute) // the alarm
+	waitScreen(t, f, "text:TIME'S UP PATES", 5*time.Minute)
 	got := f.screens()
 	var shown []string
 	for _, s := range got {
-		if strings.HasPrefix(s, "text:PATES") && (len(shown) == 0 || shown[len(shown)-1] != s) {
+		if strings.HasPrefix(s, "text:") && s != "text: " && (len(shown) == 0 || shown[len(shown)-1] != s) {
 			shown = append(shown, strings.TrimPrefix(s, "text:"))
 		}
 	}
-	// 3:05 left: reminders at 3, 2 and 1 minute left, one pass each, then the alarm.
-	if strings.Join(shown, "|") != "PATES 3 MIN|PATES 2 MIN|PATES 1 MIN|PATES" {
+	// 3:05 left, one timer: reminders at 3, 2 and 1 minute left (time only),
+	// one pass each, then the alarm.
+	if strings.Join(shown, "|") != "3 MIN|2 MIN|1 MIN|TIME'S UP PATES" {
 		t.Fatalf("shown %v (screens %v)", shown, got)
 	}
 	if err := tm.Cancel(tm.List()[0].ID); err != nil {
@@ -198,11 +222,20 @@ func TestTimersRingInTurn(t *testing.T) {
 	defer stop()
 	startTimer(t, tm, `{"text":"pates","duration_s":1}`)
 	startTimer(t, tm, `{"text":"oeufs","duration_s":1}`)
-	waitScreen(t, f, "text:PATES", 20*time.Second)
-	waitScreen(t, f, "text:OEUFS", 30*time.Second)
-	waitScreen(t, f, "text:PATES", 30*time.Second)
+	waitScreen(t, f, "text:TIME'S UP PATES", 20*time.Second)
+	waitScreen(t, f, "text:TIME'S UP OEUFS", 30*time.Second)
+	waitScreen(t, f, "text:TIME'S UP PATES", 30*time.Second)
 	press(f) // stops the one on screen
 	waitTimers(t, f, tm, 1, 10*time.Second)
+}
+
+func TestTimerRemindersNameTheTimerWhenSeveralRun(t *testing.T) {
+	f, _, tm, stop := startTimers(t, vfdLevel3None)
+	defer stop()
+	startTimer(t, tm, `{"text":"pates","duration_s":125,"countdown":true}`)
+	startTimer(t, tm, `{"text":"lessive","duration_s":600}`)
+	waitScreen(t, f, "text:2 MIN LEFT PATES", 2*time.Minute)
+	waitScreen(t, f, "text:1 MIN LEFT PATES", 2*time.Minute)
 }
 
 func TestTimerLimit(t *testing.T) {
