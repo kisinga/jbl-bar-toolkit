@@ -348,3 +348,45 @@ func TestTimerLimit(t *testing.T) {
 func contextWithCancel() (context.Context, context.CancelFunc) {
 	return context.WithCancel(context.Background())
 }
+
+func TestTimerExtend(t *testing.T) {
+	f, _, tm, stop := startTimers(t, vfdLevel3None)
+	defer stop()
+	id := startTimer(t, tm, `{"text":"pizza","duration_s":3,"countdown":true}`)
+	if err := tm.Extend(id, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if l := tm.List()[0]; l.RemainingMS < 7000 || l.RemainingMS > 8000 || l.DurationMS != 8000 {
+		t.Fatalf("after +5 s: %+v", l)
+	}
+	start := f.now()
+	waitScreen(t, f, "text:TIME'S UP PIZZA", time.Minute)
+	if rang := f.now().Sub(start); rang < 7*time.Second {
+		t.Fatalf("rang after %v, not 8 s", rang)
+	}
+	if !strings.Contains(strings.Join(screensOf(f), "|"), "0'07") {
+		t.Fatalf("the clock did not follow: %v", screensOf(f))
+	}
+	if err := tm.Extend(id, time.Minute); err == nil {
+		t.Fatal("a ringing timer extended")
+	}
+	if err := tm.Extend("t99", time.Minute); err != errTimerNotFound {
+		t.Fatalf("unknown id: %v", err)
+	}
+	other := startTimer(t, tm, `{"text":"pates","duration_s":60}`)
+	if err := tm.Extend(other, 12*time.Hour); err == nil {
+		t.Fatal("past 12 hours accepted")
+	}
+}
+
+func TestTimerExtendParameters(t *testing.T) {
+	id, add, err := parseTimerExtend(json.RawMessage(`{"id":"t2","add_s":300}`))
+	if err != nil || id != "t2" || add != 5*time.Minute {
+		t.Fatalf("%s %v %v", id, add, err)
+	}
+	for _, in := range []string{`{"add_s":60}`, `{"id":"t1"}`, `{"id":"t1","add_s":0}`, `{"id":"t1","add_s":3601}`, `{"id":"t1","add_s":60,"x":1}`} {
+		if _, _, err := parseTimerExtend(json.RawMessage(in)); err == nil {
+			t.Errorf("%s accepted", in)
+		}
+	}
+}

@@ -41,7 +41,8 @@ type barTimer struct {
 	// long it rings (see timerSoundOptions).
 	SoundVolume int
 	RingFor     time.Duration
-	Deadline    time.Time
+	Started     time.Time
+	Deadline    time.Time // under timerManager.mu: Extend moves it
 	Ringing     bool
 	cancel      context.CancelFunc
 }
@@ -55,6 +56,7 @@ type timerStatus struct {
 	SoundVolume int    `json:"sound_volume,omitempty"`
 	RingS       int    `json:"ring_s,omitempty"`
 	RemainingMS int64  `json:"remaining_ms"`
+	DurationMS  int64  `json:"duration_ms"` // start to end, extensions included
 	Ringing     bool   `json:"ringing"`
 }
 
@@ -186,6 +188,24 @@ func parseTimerStart(data json.RawMessage) (timerRequest, error) {
 	return r, nil
 }
 
+// parseTimerExtend reads {"id":"t1","add_s":60}: add_s from 1 to 3600.
+func parseTimerExtend(data json.RawMessage) (string, time.Duration, error) {
+	var p struct {
+		ID   string `json:"id"`
+		AddS *int   `json:"add_s"`
+	}
+	if err := extensionParameters(data, &p); err != nil {
+		return "", 0, err
+	}
+	if p.ID == "" {
+		return "", 0, errors.New("provide the id of the timer")
+	}
+	if p.AddS == nil || *p.AddS < 1 || *p.AddS > 3600 {
+		return "", 0, errors.New("add_s: 1 to 3600")
+	}
+	return p.ID, time.Duration(*p.AddS) * time.Second, nil
+}
+
 func parseTimerCancel(data json.RawMessage) (string, error) {
 	var p struct {
 		ID string `json:"id"`
@@ -226,7 +246,7 @@ func (m *timerManager) Start(r timerRequest) (string, error) {
 		r.SoundVolume, r.RingFor = timerSoundVolume, timerSoundRing
 	}
 	t := &barTimer{ID: fmt.Sprintf("t%d", m.next), Text: r.Text, Countdown: r.Countdown, Sound: r.Sound,
-		SoundVolume: r.SoundVolume, RingFor: r.RingFor, Deadline: m.port.now().Add(r.For)}
+		SoundVolume: r.SoundVolume, RingFor: r.RingFor, Started: m.port.now(), Deadline: m.port.now().Add(r.For)}
 	ctx, cancel := context.WithCancel(m.root)
 	t.cancel = cancel
 	m.timers[t.ID] = t
@@ -250,6 +270,32 @@ func (m *timerManager) Cancel(id string) error {
 	return nil
 }
 
+// Extend adds time to a running timer (+1 min in the page). A ringing timer
+// is not extended: stop it and start another.
+func (m *timerManager) Extend(id string, add time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t := m.timers[id]
+	if t == nil {
+		return errTimerNotFound
+	}
+	if t.Ringing {
+		return errors.New("the timer is already ringing")
+	}
+	if t.Deadline.Add(add).Sub(m.port.now()) > timerMaxDuration {
+		return errors.New("a timer lasts 12 hours at most")
+	}
+	t.Deadline = t.Deadline.Add(add)
+	return nil
+}
+
+// deadline reads a timer's end, which Extend may move.
+func (m *timerManager) deadline(t *barTimer) time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return t.Deadline
+}
+
 func (m *timerManager) List() []timerStatus {
 	now := m.port.now()
 	m.mu.Lock()
@@ -261,7 +307,7 @@ func (m *timerManager) List() []timerStatus {
 			left = 0
 		}
 		out = append(out, timerStatus{ID: t.ID, Text: t.Text, Countdown: t.Countdown, Sound: t.Sound, SoundVolume: t.SoundVolume,
-			RingS: int(t.RingFor / time.Second), RemainingMS: left.Milliseconds(), Ringing: t.Ringing})
+			RingS: int(t.RingFor / time.Second), RemainingMS: left.Milliseconds(), DurationMS: t.Deadline.Sub(t.Started).Milliseconds(), Ringing: t.Ringing})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].RemainingMS != out[j].RemainingMS {
@@ -282,16 +328,24 @@ func (m *timerManager) remove(t *barTimer) {
 }
 
 func (m *timerManager) run(ctx context.Context, t *barTimer) {
-	if m.port.sleep(ctx, t.Deadline.Sub(m.port.now())) != nil {
-		return // cancelled
-	}
-	m.mu.Lock()
-	if m.timers[t.ID] != t {
+	for {
+		// In steps of at most a second, so that Extend is seen.
+		m.mu.Lock()
+		if m.timers[t.ID] != t {
+			m.mu.Unlock()
+			return
+		}
+		left := t.Deadline.Sub(m.port.now())
+		if left <= 0 {
+			t.Ringing = true
+			m.mu.Unlock()
+			break
+		}
 		m.mu.Unlock()
-		return
+		if m.port.sleep(ctx, min(left, time.Second)) != nil {
+			return // cancelled
+		}
 	}
-	t.Ringing = true
-	m.mu.Unlock()
 	if t.Sound != timerSoundOff && m.sound != nil {
 		// In the background: the alarm text shows meanwhile (a wake-up from
 		// standby replays its pass, like any message). Stopping the timer
@@ -325,16 +379,18 @@ func (m *timerManager) countdowns(ctx context.Context) {
 		now := m.port.now()
 		m.mu.Lock()
 		var running, counting []*barTimer
+		ends := map[*barTimer]time.Time{} // as of this tick
 		for _, t := range m.timers {
 			if !t.Ringing {
 				running = append(running, t)
+				ends[t] = t.Deadline
 				if t.Countdown {
 					counting = append(counting, t)
 				}
 			}
 		}
 		m.mu.Unlock()
-		sort.Slice(counting, func(i, j int) bool { return counting[i].Deadline.Before(counting[j].Deadline) })
+		sort.Slice(counting, func(i, j int) bool { return ends[counting[i]].Before(ends[counting[j]]) })
 		want := ""
 		if len(running) == 1 && len(counting) == 1 {
 			want = counting[0].ID
@@ -351,7 +407,7 @@ func (m *timerManager) countdowns(ctx context.Context) {
 		}
 		if want != "" && live != want {
 			t := counting[0]
-			clock := func() string { return timerClock(t.Deadline.Sub(m.port.now())) }
+			clock := func() string { return timerClock(m.deadline(t).Sub(m.port.now())) }
 			if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: clock(), Mode: displayForever, Passes: 1,
 				Hooks: &displayHooks{Live: clock, Loop: true}}); err != nil {
 				m.logf("Timer %s: countdown not shown: %v", t.Text, err)
@@ -364,8 +420,8 @@ func (m *timerManager) countdowns(ctx context.Context) {
 				// has a minute or more left.
 				round = time.Time{}
 				for _, t := range counting {
-					if minutes := int((t.Deadline.Sub(now) - time.Nanosecond) / time.Minute); minutes >= 1 {
-						round = t.Deadline.Add(-time.Duration(minutes) * time.Minute)
+					if minutes := int((ends[t].Sub(now) - time.Nanosecond) / time.Minute); minutes >= 1 {
+						round = ends[t].Add(-time.Duration(minutes) * time.Minute)
 						break
 					}
 				}
@@ -373,9 +429,9 @@ func (m *timerManager) countdowns(ctx context.Context) {
 			if !round.IsZero() && !now.Before(round) {
 				for _, t := range counting {
 					// From about a minute left: a round lands just under a whole minute.
-					if t.Deadline.Sub(now) > 50*time.Second {
+					if ends[t].Sub(now) > 50*time.Second {
 						t := t
-						fresh := func() string { return timerReminder(t.Text, t.Deadline.Sub(m.port.now())) }
+						fresh := func() string { return timerReminder(t.Text, m.deadline(t).Sub(m.port.now())) }
 						if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: fresh(), Mode: displayPasses, Passes: 1, Hooks: &displayHooks{Fresh: fresh}}); err != nil {
 							m.logf("Timer %s: reminder not shown: %v", t.Text, err)
 						}

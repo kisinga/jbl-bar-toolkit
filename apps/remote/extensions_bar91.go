@@ -17,7 +17,7 @@ var bar91ActionAliases = map[string]string{
 	"eq_apply": "bar91.front-eq.apply", "eq_reset": "bar91.front-eq.reset",
 	"center_next":     "bar91.center-level.next",
 	"display_message": "bar91.display-message.show", "display_cancel": "bar91.display-message.cancel",
-	"timer_start": "bar91.timer.start", "timer_cancel": "bar91.timer.cancel",
+	"timer_start": "bar91.timer.start", "timer_cancel": "bar91.timer.cancel", "timer_extend": "bar91.timer.extend",
 }
 
 // Model composition is explicit. A future family backend registers only the
@@ -176,6 +176,13 @@ func (r *remote) registerTimers() error {
 				}
 				if err == nil {
 					_, err = r.timers.Start(request)
+				}
+				return r.backend.snapshot(), err
+			},
+			"bar91.timer.extend": func(ctx context.Context, data json.RawMessage) (state, error) {
+				id, add, err := parseTimerExtend(data)
+				if err == nil {
+					err = r.timers.Extend(id, add)
 				}
 				return r.backend.snapshot(), err
 			},
