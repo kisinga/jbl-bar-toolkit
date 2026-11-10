@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -282,5 +283,25 @@ func (r *remote) monitorCenter(ctx context.Context) {
 		}
 		d.mu.Unlock()
 		release()
+	}
+}
+
+// centerDisplayID: one message for the center level, so that steps replace
+// each other and the last level shows.
+const centerDisplayID = "center-level"
+
+// centerDisplayText is how the front display shows a center level, numbered
+// 1 to 6 like the page.
+func centerDisplayText(level uint32) string { return fmt.Sprintf("CENTER %d", level+1) }
+
+// showCenterLevel shows the level just applied on the front display, as the
+// bar does for its own bass level: the center level is not native, so the bar
+// shows nothing by itself. Without display messages, nothing is shown.
+func showCenterLevel(d *displayManager, level uint32) {
+	if d == nil {
+		return
+	}
+	if err := d.Show(displayRequest{ID: centerDisplayID, Text: centerDisplayText(level), Mode: displayPasses, Passes: 1}); err != nil {
+		displayLog("Center level %d: not shown: %v", level+1, err)
 	}
 }

@@ -190,6 +190,8 @@ The firmware has no native center setting. `center_next` cycles five levels by w
 
 Amplifiers reload defaults on wake, so a saved non-default level (`/var/JBLRemote/center-level`) is re-applied 4 s and 15 s after each observed wake or firmware restart, only with idle keys and no other control running. Front EQ is not reset by this control (different processing stage). Limits: the read ioctl fails on the qualified unit, so the page shows the requested level; bdpprog shares the device and could interleave its own amplifier writes during the short book/page window. Channel identification and audible +6 dB dialogue boost were checked by ear on one bar; standby/wake persistence needs further qualification.
 
+The bar shows nothing for a level it does not know, so once applied the level shows on the front display for one pass, like the native bass level: `CENTER 1` to `CENTER 6`, numbered as in the page, through the display messages (id `center-level`, so steps in a row replace each other and the last level shows). Like any message, it waits while the bar shows something of its own, and without display messages nothing is shown.
+
 ### Optional CLI
 
 Use Python’s standard library against the same deployed API:
