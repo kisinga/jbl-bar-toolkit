@@ -71,8 +71,15 @@ func (r *remote) playTimerSound(ctx context.Context, o timerSoundOptions) {
 		return
 	}
 	report("Playing the timer sound")
+	// The display and its key watch keep running meanwhile (display_native.go).
+	r.displayThroughGate.Store(true)
 	var free sync.Once
-	unhold := func() { free.Do(release) }
+	unhold := func() {
+		free.Do(func() {
+			r.displayThroughGate.Store(false)
+			release()
+		})
+	}
 	defer unhold()
 	var volume volumeChange
 	var adjusting sync.WaitGroup
