@@ -293,3 +293,7 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 
 .timer-body>*,.timer-new>*,.timer-options-body>*,.timer-option>*{min-width:0}
 .timer-segmented button{white-space:normal;line-height:1.2;padding:6px 4px}
+.timer-time{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.timer-add-one{min-height:44px;padding:0 12px;border-radius:22px;font-size:var(--font-caption);font-weight:600;color:var(--teal);border-color:#8ecfc64d}
+.timer-item.just-started{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal)}
+.timer-error.timer-hint{color:var(--muted)}

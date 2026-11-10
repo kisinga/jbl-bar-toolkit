@@ -801,6 +801,8 @@ try {
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true,sound:'unless_tv',sound_volume:10,ring_s:30}}),'start sends the folded text, the duration in seconds, the countdown choice and the sound (unless TV, volume at least 10, 30 s by default)');
   check(await page.locator('#timer-text').inputValue()==='','the name clears after a timer starts');
   await page.waitForFunction(()=>!document.querySelector('#timer-toast').hidden);
+  await page.waitForFunction(()=>document.querySelector('.timer-item.just-started'));
+  check(await page.locator('.timer-item.just-started').evaluate(e=>{const r=e.getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight;}),'the page scrolls to the timer just started, highlighted');
   check(/^Pates started\. Rings at \d{1,2}:\d\d(?: [AP]M)?\.$/.test(await page.locator('#timer-toast-text').textContent()),'a toast confirms the start with Undo');
   check((await page.locator('.timer-recent-item').allTextContents()).join('|')==='Pates · 10 min','the timer joins the recent ones');
   check(/^(10:00|9:5\d)$/.test(await page.locator('.timer-left').textContent()) && /^Ends at \d{1,2}:\d\d(?: [AP]M)? · on the bar · chime unless TV$/.test(await page.locator('.timer-item .timer-detail').textContent()),'the running timer shows its time left, its end and its options');
@@ -826,7 +828,7 @@ try {
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{duration_s:60,countdown:false,sound:'off'}}),'a timer without a name sends no text; the chime can be turned off');
   check(await page.locator('.timer-name').evaluateAll(names=>names.some(n=>n.textContent==='Timer')),'a timer without a name is listed as Timer');
   await page.waitForFunction(()=>document.querySelector('#timer-start').disabled);
-  check(/A timer without a name is already running/.test(await page.locator('#timer-text-error').textContent()),'a second timer without a name is refused with a message');
+  check(/^Give this one a name: a timer without a name is already running\.$/.test(await page.locator('#timer-text-error').textContent()) && await page.locator('#timer-text').getAttribute('aria-invalid')==='false' && await page.locator('#timer-text-error').evaluate(e=>e.classList.contains('timer-hint')),'after an unnamed timer, the empty name is a calm hint, not an error');
   check((await page.locator('.timer-recent-item').allTextContents()).join('|')==='1 min|Pates · 10 min','recent timers: the last one first');
   await page.reload();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===2);
@@ -838,9 +840,10 @@ try {
   await page.locator('#timer-options summary').click();
   const pates=page.locator('.timer-item').filter({hasText:'Pates'});
   await pates.locator('.timer-more').click();
-  check(await pates.locator('.timer-actions button').allTextContents().then(t=>t.join('|'))==='+1 min|+5 min|Cancel','⋮ opens +1 min, +5 min and Cancel');
+  check(await pates.locator('.timer-actions button').allTextContents().then(t=>t.join('|'))==='+5 min|Cancel','⋮ opens +5 min and Cancel');
   const leftBefore=timers().find(t=>t.text==='PATES').remaining_ms;
-  await pates.locator('.timer-add').first().click();
+  check(await pates.locator('.timer-add-one').isVisible() && (await pates.locator('.timer-add-one').textContent())==='+1 min','+1 min is at hand under the time left');
+  await pates.locator('.timer-add-one').click();
   await page.waitForFunction(()=>!document.querySelector('#timer-panel .timer-add')?.disabled);
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.extend',parameters:{id:'t2',add_s:60}}) && timers().find(t=>t.text==='PATES').remaining_ms>leftBefore,'+1 min sends the timer id and 60 s');
   state.extensions['bar91.timer'].timers=timers().filter(t=>t.text);

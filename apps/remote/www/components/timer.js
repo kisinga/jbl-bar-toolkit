@@ -52,7 +52,8 @@ export function createTimer(root, {request, supports = () => true}) {
   let recent = load(RECENT_KEY, []);
   if (!Array.isArray(recent)) recent = [];
   recent = recent.filter(r => r && validText(r.text ?? '') && Number.isInteger(r.minutes) && r.minutes >= 1 && r.minutes <= MAX_MINUTES).slice(0, RECENT_MAX);
-  let latest = null, seen = '', received = 0, problem = '', menu = null, toastTimer = null, undo = null;
+  let latest = null, seen = '', received = 0, problem = '', menu = null, toastTimer = null, undo = null, fresh = null;
+  const calm = () => root.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const outbox = {timer_start: [], timer_cancel: [], timer_extend: []};
   const timers = () => latest?.state?.timers || [];
   const busy = () => !latest?.ready || !!latest?.active;
@@ -69,7 +70,7 @@ export function createTimer(root, {request, supports = () => true}) {
     if (!validText(name)) return {error: "Name: letters, digits, space and - . ' only (31 at most).", field: true};
     if (!Number.isInteger(m) || m < 1 || m > MAX_MINUTES) return {error: 'Minutes: 1 to 720.'};
     if (o.sound !== 'off' && (!Number.isInteger(o.volume) || o.volume < 1 || o.volume > 30)) return {error: 'Volume: 1 to 30.'};
-    if (timers().some(t => t.text === name)) return {error: name ? title(name) + ' is already running. Choose another name, like ' + title(name) + ' 2.' : 'A timer without a name is already running. Give this one a name.', field: true};
+    if (timers().some(t => t.text === name)) return name ? {error: title(name) + ' is already running. Choose another name, like ' + title(name) + ' 2.', field: true} : {error: 'Give this one a name: a timer without a name is already running.', field: true, hint: true};
     if (timers().length >= MAX_TIMERS) return {error: 'At most 8 timers at a time.'};
     return {parameters: {...(name ? {text: name} : {}), duration_s: m * 60, countdown: o.countdown, sound: o.sound, ...(o.sound !== 'off' ? {sound_volume: o.volume, ring_s: o.ring} : {})}};
   }
@@ -135,10 +136,15 @@ export function createTimer(root, {request, supports = () => true}) {
       more.append(svg('svg', {viewBox: '0 0 24 24', 'aria-hidden': 'true'}));
       for (const cy of [5, 12, 19]) more.lastChild.append(svg('circle', {cx: 12, cy, r: 1.6, fill: 'currentColor', stroke: 'none'}));
       more.disabled = false;
-      item.append(ring(left / total), words, el('span', 'timer-left', pageClock(left)), more);
+      // The time left, and +1 min at hand under it (a quick tap while cooking).
+      const time = el('span', 'timer-time');
+      time.append(el('span', 'timer-left', pageClock(left)));
+      if (extend) time.append(button('+1 min', 'timer-add timer-add-one', () => send('timer_extend', {id: t.id, add_s: 60}), 'Add 1 minute to ' + name));
+      if (fresh?.id === t.id && Date.now() < fresh.until) item.classList.add('just-started');
+      item.append(ring(left / total), words, time, more);
       if (menu === t.id) {
         const actions = el('div', 'timer-actions');
-        if (extend) actions.append(button('+1 min', 'timer-add', () => send('timer_extend', {id: t.id, add_s: 60})), button('+5 min', 'timer-add', () => send('timer_extend', {id: t.id, add_s: 300})));
+        if (extend) actions.append(button('+5 min', 'timer-add', () => send('timer_extend', {id: t.id, add_s: 300}), 'Add 5 minutes to ' + name));
         actions.append(button('Cancel', 'timer-cancel', () => { menu = null; send('timer_cancel', {id: t.id}); }, 'Cancel ' + name));
         item.append(actions);
       }
@@ -195,6 +201,14 @@ export function createTimer(root, {request, supports = () => true}) {
       const t = timers().find(t => t.text === undo.text && !t.ringing);
       if (t) undo.id = t.id;
     }
+    if (undo.id && undo.shown && !undo.seen) {
+      // Show the timer just started, where it runs: the form below is
+      // already ready for the next one.
+      undo.seen = true;
+      fresh = {id: undo.id, until: Date.now() + 2500};
+      renderList();
+      list.querySelector('[data-timer="' + undo.id + '"]')?.scrollIntoView?.({block: 'center', behavior: calm() ? 'auto' : 'smooth'});
+    }
     toast.hidden = !undo.id || !undo.shown;
     $('timer-toast-text').textContent = undo.label + ' started. ' + (undo.sound === 'off' ? 'Ends' : 'Rings') + ' at ' + clockTime(new Date(undo.at)) + '.';
     $('timer-undo').disabled = busy();
@@ -223,7 +237,9 @@ export function createTimer(root, {request, supports = () => true}) {
     const fieldError = d.error && d.field ? d.error : '';
     $('timer-text-error').hidden = !fieldError;
     $('timer-text-error').textContent = fieldError;
-    text.setAttribute('aria-invalid', String(!!fieldError));
+    // Not a mistake: a second timer without a name only needs one.
+    $('timer-text-error').classList.toggle('timer-hint', !!d.hint);
+    text.setAttribute('aria-invalid', String(!!fieldError && !d.hint));
     $('timer-state').textContent = problem || (d.error && !d.field ? d.error : !context.ready ? 'Timers need the connection to the soundbar.' : '');
     $('timer-state').hidden = !$('timer-state').textContent;
     renderList();

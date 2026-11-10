@@ -12,7 +12,7 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 10 November 2026, first with 
 
 The **Timers** panel reads from top to bottom:
 
-1. **Running timers**, first to end first. Each one shows a ring for the time left, its name, when it ends, its options, and the time left (`4:59`). **⋮** opens **+1 min**, **+5 min** and **Cancel**, so that a stray tap does not cancel it. A ringing timer goes on top, in orange, with a large **Stop** and "or press any key on the JBL remote".
+1. **Running timers**, first to end first. Each one shows a ring for the time left, its name, when it ends, its options, and the time left (`4:59`), with **+1 min** under it. **⋮** opens **+5 min** and **Cancel**, so that a stray tap does not cancel it. A ringing timer goes on top, in orange, with a large **Stop** and "or press any key on the JBL remote".
 2. **Start again**: the last four timers started from this device, in a tinted box. One tap starts one again, with its options. A timer that is running cannot start twice, so its button is off meanwhile.
 3. **New timer**:
    - **the minutes**, large, with − and + and the shortcuts 1, 3, 5, 10, 15 and 30. They can be typed, from 1 to 720;
@@ -29,7 +29,7 @@ The **Timers** panel reads from top to bottom:
      The options are kept for the next timers on this device;
    - **Start** names what it starts (`Start 5-minute timer`);
    - under it, folded, **Rings at 18:47 · what will happen?** Unfolded, three lines say what the bar does now, at the end (the text that scrolls, the chime) and how to stop it.
-4. After a start, a toast says `Pizza started. Rings at 18:47.` for 8 seconds, with **Undo**, which cancels it.
+4. After a start, the page scrolls to the new timer, outlined for a moment, while the form below is ready for the next one. When a timer without a name runs, the empty name is a calm hint (give this one a name), not an error. A toast says `Pizza started. Rings at 18:47.` for 8 seconds, with **Undo**, which cancels it.
 
 Recent timers and options live in the browser's storage: each device has its own. The panel works with the bar in standby.
 
@@ -43,7 +43,9 @@ Recent timers and options live in the browser's storage: each device has its own
   - **Stop** in the page, or `bar91.timer.cancel`;
   - **10 minutes.**
 
-  Several timers that end together take turns on the display, like messages. A key stops the one being shown.
+  Several timers that end together take turns on the display, like messages. A key stops the one being shown; the next key, after a release, stops the next one.
+
+  Keys also count while the alarm waits behind the bar's own screen. On the owner's bar (10 November 2026), a volume key that stopped the first of two alarms brought up the volume, and each further press kept it up, so the second alarm never came back on screen to see a key. A key pressed while another alarm of ours is shown belongs to that one.
 - **The sound** is a "dring dring" chime (about 2.8 s, a WAV made by the remote itself). The remote serves it for the time of the sound, on a short-lived local address with a random path. It then asks the bar's own Cast receiver (`127.0.0.1:8009`, Default Media Receiver) to play it, trying the loopback address first, then the bar's network address. This was qualified with `catt` on 10 November 2026:
   - the bar plays it on or from standby, at its own volume;
   - waking from standby does not wake the TV;
@@ -87,7 +89,7 @@ The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
 - a key held before the alarm, which does not count;
 - the 10-minute limit;
 - duplicate names, a single unnamed timer, cancel, and `display_cancel` leaving timers alone;
-- two alarms taking turns;
+- two alarms taking turns, one key each, also when the second waits behind the bar's volume screen;
 - the limit of 8 timers;
 - time added to a running timer: the clock follows and the alarm comes later; a ringing timer, an unknown id and more than 12 hours are refused;
 - the sound (`timer_sound_test.go`):
@@ -102,5 +104,5 @@ The short aliases are `timer_start`, `timer_extend` and `timer_cancel`.
 - the minutes, presets and Start's label;
 - a name or none, a duplicate refused under the field;
 - Undo, recent timers (started again in one tap, kept after a reload, the last first), options kept;
-- ⋮ with +1 min and Cancel;
+- the scroll to the timer just started, +1 min under the time left, ⋮ with +5 min and Cancel;
 - standby, a ringing timer with Stop, and 320 px.
