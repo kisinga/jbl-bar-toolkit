@@ -25,7 +25,7 @@ The **Timers** panel has:
   - **Off**.
 
   With a sound, two more settings appear:
-  - **Volume at least**, 1 to 30, 15 by default. The bar is unmuted and turned up to this volume if it is lower, never down.
+  - **Volume at least**, 1 to 30, 10 by default. The bar is unmuted and turned up to this volume if it is lower, never down.
   - **Ring for**: 10 s, 30 s (default), 1 min or 2 min. The chime repeats this long, then the bar returns to its volume, source or standby. The `TIME'S UP` text goes on until a key.
 
 Running timers are listed with their time left and a Cancel button. A ringing timer offers Stop. The panel works with the bar in standby.
@@ -65,7 +65,7 @@ Running timers are listed with their time left and a Cancel button. A ringing ti
 ```
 
 The short aliases are `timer_start` and `timer_cancel`.
-- **Start:** `duration_s` is required (1 to 43200). `text`, `countdown`, `sound` (`off`, the default for the API, `unless_tv` or `always`), `sound_volume` (1 to 30, default 15) and `ring_s` (3 to 300, default 30) are optional.
+- **Start:** `duration_s` is required (1 to 43200). `text`, `countdown`, `sound` (`off`, the default for the API, `unless_tv` or `always`), `sound_volume` (1 to 30, default 10) and `ring_s` (3 to 300, default 30) are optional.
 - **Refused:** an invalid name, a name already in use (or a second timer without a name), a ninth timer, an unknown id and unknown fields.
 
 ## Tests

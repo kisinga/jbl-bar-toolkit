@@ -778,13 +778,13 @@ try {
   check(await page.locator('#timer-minutes').inputValue()==='5' && await page.locator('#timer-text').getAttribute('placeholder')==='PIZZA','timer defaults: 5 minutes, name optional');
   await page.locator('#timer-volume').fill('31');
   check(await page.locator('#timer-start').isDisabled() && /Volume: 1 to 30/.test(await page.locator('#timer-state').textContent()),'a volume above 30 is refused');
-  await page.locator('#timer-volume').fill('15');
+  await page.locator('#timer-volume').fill('10');
   await page.locator('#timer-text').fill('pâtes');
   await page.locator('[data-minutes="10"]').click();
   await page.locator('#timer-countdown').check();
   await page.locator('#timer-start').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true,sound:'unless_tv',sound_volume:15,ring_s:30}}),'start sends the folded text, the duration in seconds, the countdown choice and the sound (unless TV, volume at least 15, 30 s by default)');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true,sound:'unless_tv',sound_volume:10,ring_s:30}}),'start sends the folded text, the duration in seconds, the countdown choice and the sound (unless TV, volume at least 10, 30 s by default)');
   check(await page.locator('#timer-text').inputValue()==='','the text field clears after a timer starts');
   check(/^(10'00|9'5\d) · shown on the bar · sound unless TV$/.test(await page.locator('.timer-time').textContent()),'the list shows the time left as the bar writes it');
   const timeBefore=await page.locator('.timer-time').textContent();

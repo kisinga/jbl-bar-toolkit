@@ -177,7 +177,7 @@ func TestTimerPlaysItsSoundWhenItRings(t *testing.T) {
 		mu.Lock()
 		played = append(played, o.Mode)
 		mu.Unlock()
-		if o.Volume != 15 || o.RingFor != 30*time.Second {
+		if o.Volume != 10 || o.RingFor != 30*time.Second {
 			t.Errorf("default options %+v", o)
 		}
 	}
@@ -201,7 +201,7 @@ func TestTimerSoundParameter(t *testing.T) {
 		t.Fatalf("default: %+v %v", r, err)
 	}
 	r, err = parseTimerStart(json.RawMessage(`{"duration_s":60,"sound":"always"}`))
-	if err != nil || r.Sound != "always" || r.SoundVolume != 15 || r.RingFor != 30*time.Second {
+	if err != nil || r.Sound != "always" || r.SoundVolume != 10 || r.RingFor != 30*time.Second {
 		t.Fatalf("always, defaults: %+v %v", r, err)
 	}
 	r, err = parseTimerStart(json.RawMessage(`{"duration_s":60,"sound":"unless_tv","sound_volume":22,"ring_s":120}`))

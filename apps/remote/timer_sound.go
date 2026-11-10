@@ -21,7 +21,7 @@ const (
 	timerSoundUnlessTV = "unless_tv" // not when the bar is on TV, optical or HDMI
 	timerSoundAlways   = "always"
 
-	timerSoundVolume    = 15               // default minimum volume while ringing
+	timerSoundVolume    = 10               // default minimum volume while ringing
 	timerSoundVolumeMax = 30               // bar volume steps offered
 	timerSoundRing      = 30 * time.Second // default ringing time
 	// castVolumeSteps: native volume ≈ Cast level × 32 (owner's bar,
