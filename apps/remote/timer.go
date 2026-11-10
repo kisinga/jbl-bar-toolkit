@@ -12,18 +12,18 @@ import (
 )
 
 // Timers on the front display (extension bar91.timer). A timer counts down in
-// the remote, optionally showing the time left; when it ends, its text shows
-// until a key of the bar's remote is pressed (on or in standby), it is
-// cancelled, or 10 minutes pass. Qualified on the owner's Bar 9.1 on
-// 10 Nov 2026: a short text rewritten in place does not scroll or restart;
-// the display shows 20 characters; the key flag (vfdKeyFlag) rises on every
-// key press, also in standby. Timers do not survive a restart.
+// the remote and, on request, shows the minutes left once a minute
+// (PATES 4 MIN, one pass). When it ends, its text shows until a key of the
+// bar's remote is pressed (on or in standby), it is cancelled, or 10 minutes
+// pass. Qualified on the owner's Bar 9.1 on 10 Nov 2026: the key flag
+// (vfdKeyFlag) rises on every key press, also in standby. A countdown
+// rewritten every second does not work: a text longer than the display
+// scrolls and each rewrite restarts it. Timers do not survive a restart.
 const (
-	timerDefaultText = "TIMER!"
+	timerDefaultText = "TIMER"
 	timerMaxCount    = 8
 	timerMaxDuration = 12 * time.Hour
 	timerAlarmFor    = 10 * time.Minute
-	timerScreenWidth = 20 // characters shown without scrolling
 	timerDisplayID   = "timer-"
 )
 
@@ -78,26 +78,13 @@ func (m *timerManager) Run(ctx context.Context) {
 	m.mu.Unlock()
 }
 
-// timerClock writes the time left as the display reads it well: 4'59, 1H04'59.
-func timerClock(left time.Duration) string {
-	if left < 0 {
-		left = 0
+// timerReminder is the once-a-minute reminder: PATES 4 MIN.
+func timerReminder(name string, minutes int) string {
+	left := fmt.Sprintf("%d MIN", minutes)
+	if len(name)+1+len(left) <= displayTextMax {
+		return name + " " + left
 	}
-	s := int((left + time.Second - 1) / time.Second)
-	if s >= 3600 {
-		return fmt.Sprintf("%dH%02d'%02d", s/3600, s/60%60, s%60)
-	}
-	return fmt.Sprintf("%d'%02d", s/60, s%60)
-}
-
-// countdownText puts the name in front of the time left when both fit on the
-// display without scrolling.
-func countdownText(name string, left time.Duration) string {
-	clock := timerClock(left)
-	if len(name)+1+len(clock) <= timerScreenWidth {
-		return name + " " + clock
-	}
-	return clock
+	return left
 }
 
 type timerRequest struct {
@@ -215,11 +202,18 @@ func (m *timerManager) remove(t *barTimer) {
 
 func (m *timerManager) run(ctx context.Context, t *barTimer) {
 	displayID := timerDisplayID + t.ID
-	if t.Countdown {
-		live := func() string { return countdownText(t.Text, t.Deadline.Sub(m.port.now())) }
-		err := m.display.Show(displayRequest{ID: displayID, Text: live(), Mode: displayForever, Passes: 1, Hooks: &displayHooks{Live: live}})
-		if err != nil {
-			m.logf("Timer %s: countdown not shown: %v", t.Text, err)
+	// Reminders: one pass at each whole minute left (none at the start or
+	// in the last minute). The same display id replaces an unfinished one.
+	for t.Countdown {
+		minutes := int((t.Deadline.Sub(m.port.now()) - time.Nanosecond) / time.Minute)
+		if minutes < 1 {
+			break
+		}
+		if m.port.sleep(ctx, t.Deadline.Add(-time.Duration(minutes)*time.Minute).Sub(m.port.now())) != nil {
+			return // cancelled
+		}
+		if err := m.display.Show(displayRequest{ID: displayID, Text: timerReminder(t.Text, minutes), Mode: displayPasses, Passes: 1}); err != nil {
+			m.logf("Timer %s: reminder not shown: %v", t.Text, err)
 		}
 	}
 	if m.port.sleep(ctx, t.Deadline.Sub(m.port.now())) != nil {
@@ -232,7 +226,7 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 	}
 	t.Ringing = true
 	m.mu.Unlock()
-	// Same id: the alarm replaces the countdown in its place.
+	// Same id: the alarm replaces a reminder still showing.
 	done := func(reason string) {
 		if reason != "cancelled" {
 			m.logf("Timer %s: alarm ended (%s)", t.Text, reason)

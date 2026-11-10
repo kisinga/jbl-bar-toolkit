@@ -6,7 +6,7 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 8 November 2026, first with a
 
 ## What it does
 
-- **Text.** 1–31 characters: letters, digits, space and `- . : ! ? '`. The display has no lower case or accents, so the remote upper-cases and folds the text (`frigo fermé` → `FRIGO FERME`) and turns line breaks into spaces.
+- **Text.** 1–31 characters: letters, digits, space and `- . '`. The display does not show `:` or `!` correctly (seen on the bar on 10 November 2026), so they are refused. The display has no lower case or accents, so the remote upper-cases and folds the text (`frigo fermé` → `FRIGO FERME`) and turns line breaks into spaces.
 - **How long.** Choose one of these; the default is one pass:
   - a number of passes, 1–99;
   - a duration, 1 s to 24 h. A pass that has started is shown to its end, so a message is never cut after its first word;

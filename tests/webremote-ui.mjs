@@ -775,7 +775,7 @@ try {
   await page.setViewportSize({width:390,height:920});
   await page.reload();
   await page.waitForFunction(()=>!document.querySelector('#timer-panel').hidden && !document.querySelector('#timer-start').disabled);
-  check(await page.locator('#timer-minutes').inputValue()==='5' && await page.locator('#timer-text').getAttribute('placeholder')==='TIMER!','timer defaults: 5 minutes, TIMER!');
+  check(await page.locator('#timer-minutes').inputValue()==='5' && await page.locator('#timer-text').getAttribute('placeholder')==='TIMER','timer defaults: 5 minutes, TIMER');
   await page.locator('#timer-text').fill('pâtes');
   await page.locator('[data-minutes="10"]').click();
   await page.locator('#timer-countdown').check();
@@ -783,7 +783,7 @@ try {
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true}}),'start sends the folded text, the duration in seconds and the countdown choice');
   check(await page.locator('#timer-text').inputValue()==='','the text field clears after a timer starts');
-  check(/^(10'00|9'5\d) · shown on the bar$/.test(await page.locator('.timer-time').textContent()),'the list shows the time left as the bar writes it');
+  check(/^(10'00|9'5\d) · minutes shown on the bar$/.test(await page.locator('.timer-time').textContent()),'the list shows the time left as the bar writes it');
   const timeBefore=await page.locator('.timer-time').textContent();
   check(await page.waitForFunction(before=>document.querySelector('.timer-time').textContent!==before,timeBefore,{timeout:3000}).then(()=>true,()=>false),'the time left counts down between updates');
   await page.locator('#timer-text').fill('Pates');

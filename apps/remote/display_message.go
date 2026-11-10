@@ -46,12 +46,12 @@ const (
 	displayMaxTime  = 24 * time.Hour
 	displayReleaseT = 5 * time.Second
 	displayKeyPoll  = 100 * time.Millisecond // a key press shows on vfdKeyFlag for ~0.1-0.5 s
-	displayLivePass = 10 * time.Second       // live text: turn length when other messages wait
 )
 
 var (
-	displayIDPattern   = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
-	displayTextPattern = regexp.MustCompile(`^[A-Z0-9 .:!?'-]{1,31}$`)
+	displayIDPattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
+	// Characters seen correctly on the bar (10 Nov 2026); ':' and '!' are not.
+	displayTextPattern = regexp.MustCompile(`^[A-Z0-9 .'-]{1,31}$`)
 	errDisplayGate     = errors.New("display step deferred: another control holds the gate")
 	errDisplayStopped  = errors.New("display message stopped")
 	errDisplayBusy     = errors.New("display still busy")
@@ -79,7 +79,7 @@ func displayText(raw string) (string, error) {
 		return "", errors.New("text: at most 31 characters")
 	}
 	if !displayTextPattern.MatchString(text) {
-		return "", errors.New("text: letters, digits, space and - . : ! ? ' only")
+		return "", errors.New("text: letters, digits, space and - . ' only")
 	}
 	return text, nil
 }
@@ -112,10 +112,6 @@ type displayRequest struct {
 
 // displayHooks extend a message for features built on it (timers).
 type displayHooks struct {
-	// Live gives the text to show now. It is rewritten in place while the
-	// message shows (no blank between passes); keep it short enough not to
-	// scroll (20 characters).
-	Live func() string
 	// StopOnKey ends the message when a key of the bar's remote is pressed,
 	// on or in standby.
 	StopOnKey bool
@@ -214,9 +210,8 @@ type displayJob struct {
 	done   chan struct{}
 	start  time.Time
 	pass   int
-	own    bool // our text is selected (level 2 = 1)
-	stby   bool // we lifted the standby blank screen (level 3 28 -> 52)
-	shown  string
+	own    bool   // our text is selected (level 2 = 1)
+	stby   bool   // we lifted the standby blank screen (level 3 28 -> 52)
 	armed  bool   // StopOnKey: the key flag was seen released since the last gap
 	reason string // why the message ended, for Hooks.Done
 }
@@ -499,7 +494,6 @@ func (m *displayManager) take(job *displayJob, text string) error {
 		if e := mem.writeText(text); e != nil {
 			return e
 		}
-		job.shown = text
 		t, e := mem.tick()
 		if e != nil {
 			return e
@@ -598,15 +592,6 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 				job.own, job.stby = false, false
 				return e
 			}
-			if h.Live != nil && text != " " {
-				if live := h.Live(); live != job.shown {
-					// In place: the selector stays, so a short text does not restart.
-					if e = mem.writeText(live); e != nil {
-						return e
-					}
-					job.shown = live
-				}
-			}
 			t, e := mem.tick()
 			if e != nil {
 				return e
@@ -630,7 +615,7 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 
 func (m *displayManager) run(job *displayJob) {
 	defer m.finish(job)
-	r, h := job.req, job.hooks()
+	r := job.req
 	end := func(err error) {
 		switch err {
 		case nil:
@@ -660,26 +645,15 @@ func (m *displayManager) run(job *displayJob) {
 		end(err)
 		return
 	}
-	text := func() string {
-		if h.Live != nil {
-			return h.Live()
-		}
-		return r.Text
-	}
-	// Live text (a countdown) shows without blanks; its passes only set how
-	// long it keeps the display when other messages wait.
 	passTime, gap := displayPassTime(r.Text), displayGap
-	if h.Live != nil {
-		passTime, gap = displayLivePass, 0
-	}
 	for m.more(job) {
-		err := m.show(job, text(), passTime)
+		err := m.show(job, r.Text, passTime)
 		if err == nil {
 			job.pass++
 			if !m.more(job) {
 				// After the last pass, a blank only when the bar is on: in
 				// standby the screen goes back to black anyway.
-				if !job.stby && gap > 0 {
+				if !job.stby {
 					err = m.show(job, " ", gap)
 				}
 				if err == nil || err == errDisplayDeferred {
@@ -687,10 +661,7 @@ func (m *displayManager) run(job *displayJob) {
 					return
 				}
 			} else {
-				if gap > 0 {
-					err = m.show(job, " ", gap)
-				}
-				if err == nil {
+				if err = m.show(job, " ", gap); err == nil {
 					if m.waiting() {
 						// A long or endless message lets queued messages through.
 						m.release(job)

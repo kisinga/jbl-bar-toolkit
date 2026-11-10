@@ -3,9 +3,10 @@ import {byId} from './dom.js';
 // on or in standby; when one ends, its text shows until a key of the bar's
 // remote is pressed, it is cancelled here, or 10 minutes pass.
 const MAX_MINUTES = 720;
-// Like the remote: upper case, no accents; letters, digits, space and - . : ! ? '
+// Like the remote: upper case, no accents; letters, digits, space and - . ' (the
+// characters the display shows correctly)
 const fold = text => text.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/œ/gi, 'OE').replace(/æ/gi, 'AE').replace(/ß/g, 'SS').replace(/[’‘]/g, "'").replace(/[–—]/g, '-').toUpperCase().trim().split(/\s+/).join(' ');
-const validText = text => text === '' || /^[A-Z0-9 .:!?'-]{1,31}$/.test(text);
+const validText = text => text === '' || /^[A-Z0-9 .'-]{1,31}$/.test(text);
 export const timerClock = ms => {
   const s = Math.max(0, Math.ceil(ms / 1000));
   const two = n => String(n).padStart(2, '0');
@@ -19,12 +20,12 @@ export function createTimer(root, {request}) {
   function draft() {
     const name = fold(text.value);
     const m = Number(minutes.value);
-    if (!validText(name)) return {error: "Text: letters, digits, space and - . : ! ? ' only (31 at most)."};
+    if (!validText(name)) return {error: "Text: letters, digits, space and - . ' only (31 at most)."};
     if (!Number.isInteger(m) || m < 1 || m > MAX_MINUTES) return {error: 'Duration: 1 to 720 minutes.'};
-    const shown = name || 'TIMER!';
+    const shown = name || 'TIMER';
     if (timers().some(t => t.text === shown)) return {error: 'A timer named ' + shown + ' is already running. Choose another text.'};
     if (timers().length >= 8) return {error: 'At most 8 timers at a time.'};
-    return {parameters: {text: name || 'TIMER!', duration_s: m * 60, countdown: countdown.checked}};
+    return {parameters: {text: name || 'TIMER', duration_s: m * 60, countdown: countdown.checked}};
   }
   function renderList() {
     const now = Date.now();
@@ -36,7 +37,7 @@ export function createTimer(root, {request}) {
       name.className = 'timer-name'; name.textContent = t.text;
       const time = root.ownerDocument.createElement('span');
       time.className = 'timer-time';
-      time.textContent = t.ringing ? 'Ringing · press any key on the JBL remote' : timerClock(t.remaining_ms - (now - received)) + (t.countdown ? ' · shown on the bar' : '');
+      time.textContent = t.ringing ? 'Ringing · press any key on the JBL remote' : timerClock(t.remaining_ms - (now - received)) + (t.countdown ? ' · minutes shown on the bar' : '');
       const cancel = root.ownerDocument.createElement('button');
       cancel.type = 'button'; cancel.className = 'timer-cancel'; cancel.dataset.timer = t.id;
       cancel.textContent = cancelling === t.id ? 'Cancelling…' : t.ringing ? 'Stop' : 'Cancel';

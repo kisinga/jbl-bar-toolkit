@@ -58,33 +58,25 @@ func press(f *fakeDisplay) {
 	f.set(vfdKeyFlag, 0)
 }
 
-func TestTimerClock(t *testing.T) {
-	for left, want := range map[time.Duration]string{
-		0: "0'00", 59*time.Second + 100*time.Millisecond: "1'00", 5 * time.Minute: "5'00", 299 * time.Second: "4'59",
-		time.Hour + 4*time.Minute + 59*time.Second: "1H04'59", -time.Second: "0'00",
-	} {
-		if got := timerClock(left); got != want {
-			t.Errorf("timerClock(%v) = %q, want %q", left, got, want)
-		}
-	}
-	if got := countdownText("PATES", 299*time.Second); got != "PATES 4'59" {
+func TestTimerReminderText(t *testing.T) {
+	if got := timerReminder("PATES", 4); got != "PATES 4 MIN" {
 		t.Errorf("with the name: %q", got)
 	}
-	if got := countdownText("LA LESSIVE EST FINIE", 299*time.Second); got != "4'59" {
-		t.Errorf("name too long for 20 characters: %q", got)
+	if got := timerReminder(strings.Repeat("A", 28), 12); got != "12 MIN" {
+		t.Errorf("name too long for 31 characters: %q", got)
 	}
 }
 
 func TestTimerParameters(t *testing.T) {
 	r, err := parseTimerStart(json.RawMessage(`{"duration_s":300}`))
-	if err != nil || r != (timerRequest{Text: "TIMER!", For: 5 * time.Minute}) {
+	if err != nil || r != (timerRequest{Text: "TIMER", For: 5 * time.Minute}) {
 		t.Fatalf("default text: %+v %v", r, err)
 	}
 	r, err = parseTimerStart(json.RawMessage(`{"text":"pâtes","duration_s":600,"countdown":true}`))
 	if err != nil || r != (timerRequest{Text: "PATES", For: 10 * time.Minute, Countdown: true}) {
 		t.Fatalf("folded text: %+v %v", r, err)
 	}
-	for _, in := range []string{`{}`, `{"duration_s":0}`, `{"duration_s":43201}`, `{"duration_s":60,"text":"50%"}`, `{"duration_s":60,"color":"red"}`} {
+	for _, in := range []string{`{}`, `{"duration_s":0}`, `{"duration_s":43201}`, `{"duration_s":60,"text":"50%"}`, `{"duration_s":60,"text":"STOP!"}`, `{"duration_s":60,"text":"A:B"}`, `{"duration_s":60,"color":"red"}`} {
 		if _, err := parseTimerStart(json.RawMessage(in)); err == nil {
 			t.Errorf("%s: want an error", in)
 		}
@@ -125,7 +117,7 @@ func TestTimerKeyHeldBeforeTheAlarmDoesNotStopIt(t *testing.T) {
 	defer stop()
 	f.set(vfdKeyFlag, 1) // a key held (or sent by the remote) when the alarm starts
 	startTimer(t, tm, `{"duration_s":1}`)
-	waitScreen(t, f, "text:TIMER!", 20*time.Second)
+	waitScreen(t, f, "text:TIMER", 20*time.Second)
 	time.Sleep(2 * time.Second / displayScale)
 	if len(tm.List()) != 1 {
 		t.Fatal("a key already down stopped the alarm")
@@ -140,7 +132,7 @@ func TestTimerAlarmEndsAfterTenMinutes(t *testing.T) {
 	f, _, tm, stop := startTimers(t, vfdLevel3None)
 	defer stop()
 	startTimer(t, tm, `{"duration_s":1}`)
-	waitScreen(t, f, "text:TIMER!", 20*time.Second)
+	waitScreen(t, f, "text:TIMER", 20*time.Second)
 	start := f.now()
 	waitTimers(t, f, tm, 0, 15*time.Minute)
 	// Counted from the end of the timer; the screen shows it a moment later.
@@ -149,24 +141,21 @@ func TestTimerAlarmEndsAfterTenMinutes(t *testing.T) {
 	}
 }
 
-func TestTimerCountdownUpdatesInPlace(t *testing.T) {
+func TestTimerRemindsOnceAMinute(t *testing.T) {
 	f, m, tm, stop := startTimers(t, vfdLevel3None)
 	defer stop()
-	startTimer(t, tm, `{"text":"pates","duration_s":5,"countdown":true}`)
-	waitScreen(t, f, "text:PATES 0'03", 20*time.Second)
-	waitScreen(t, f, "text:PATES 0'01", 20*time.Second)
-	waitScreen(t, f, "text:PATES", 20*time.Second) // the alarm replaces the countdown
+	startTimer(t, tm, `{"text":"pates","duration_s":185,"countdown":true}`)
+	waitScreen(t, f, "text:PATES", 5*time.Minute) // the alarm
 	got := f.screens()
-	for i, s := range got {
-		if s == "text: " && i > 0 && strings.HasPrefix(got[i-1], "text:PATES 0'") {
-			t.Fatalf("a blank between countdown steps: %v", got)
+	var shown []string
+	for _, s := range got {
+		if strings.HasPrefix(s, "text:PATES") && (len(shown) == 0 || shown[len(shown)-1] != s) {
+			shown = append(shown, strings.TrimPrefix(s, "text:"))
 		}
 	}
-	m.mu.Lock()
-	jobs := len(m.jobs)
-	m.mu.Unlock()
-	if jobs != 1 {
-		t.Fatalf("display jobs %d, want the alarm only", jobs)
+	// 3:05 left: reminders at 3, 2 and 1 minute left, one pass each, then the alarm.
+	if strings.Join(shown, "|") != "PATES 3 MIN|PATES 2 MIN|PATES 1 MIN|PATES" {
+		t.Fatalf("shown %v (screens %v)", shown, got)
 	}
 	if err := tm.Cancel(tm.List()[0].ID); err != nil {
 		t.Fatal(err)
@@ -178,6 +167,7 @@ func TestTimerSameTextRefusedAndCancel(t *testing.T) {
 	f, m, tm, stop := startTimers(t, vfdLevel3None)
 	defer stop()
 	id := startTimer(t, tm, `{"text":"Pâtes","duration_s":600,"countdown":true}`)
+	time.Sleep(61 * time.Second / displayScale) // a reminder is showing
 	r, _ := parseTimerStart(json.RawMessage(`{"text":"PATES","duration_s":60}`))
 	if _, err := tm.Start(r); err == nil || !strings.Contains(err.Error(), "PATES is already running") {
 		t.Fatalf("same text: %v", err)
@@ -186,7 +176,7 @@ func TestTimerSameTextRefusedAndCancel(t *testing.T) {
 	if l := tm.List(); len(l) != 2 || l[0].ID != other {
 		t.Fatalf("list sorted by time left: %+v", l)
 	}
-	// Cancelling every message leaves the countdown alone.
+	// Cancelling every message leaves timers alone.
 	m.Cancel("")
 	if err := tm.Cancel(id); err != nil {
 		t.Fatal(err)

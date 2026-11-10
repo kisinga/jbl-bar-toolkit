@@ -195,17 +195,17 @@ func show(t *testing.T, m *displayManager, params string) {
 
 func TestDisplayTextFolding(t *testing.T) {
 	for raw, want := range map[string]string{
-		"frigo fermé":          "FRIGO FERME",
-		"  Porte   ouverte ! ": "PORTE OUVERTE !",
-		"Œuf – côté":           "OEUF - COTE",
-		"l’entrée":             "L'ENTREE",
+		"frigo fermé":         "FRIGO FERME",
+		"  Porte   ouverte. ": "PORTE OUVERTE.",
+		"Œuf – côté":          "OEUF - COTE",
+		"l’entrée":            "L'ENTREE",
 	} {
 		got, err := displayText(raw)
 		if err != nil || got != want {
 			t.Errorf("displayText(%q) = %q, %v; want %q", raw, got, err, want)
 		}
 	}
-	for _, raw := range []string{"", "   ", strings.Repeat("A", 32), "50% OFF", "€"} {
+	for _, raw := range []string{"", "   ", strings.Repeat("A", 32), "50% OFF", "STOP!", "A:B", "€"} {
 		if got, err := displayText(raw); err == nil {
 			t.Errorf("displayText(%q) = %q, want an error", raw, got)
 		}
