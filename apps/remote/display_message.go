@@ -115,6 +115,10 @@ type displayHooks struct {
 	// StopOnKey ends the message when a key of the bar's remote is pressed,
 	// on or in standby.
 	StopOnKey bool
+	// Live gives the text to show now; it is rewritten in place while the
+	// message shows. Keep it short: a text longer than the display scrolls,
+	// and each rewrite restarts the scroll (seen on the bar, 10 Nov 2026).
+	Live func() string
 	// Loop shows the passes back to back, without the blank between them
 	// (a long text then scrolls continuously).
 	Loop bool
@@ -217,6 +221,7 @@ type displayJob struct {
 	stby   bool   // we lifted the standby blank screen (level 3 28 -> 52)
 	armed  bool   // StopOnKey: the key flag was seen released since the last gap
 	reason string // why the message ended, for Hooks.Done
+	shown  string // text on screen (Live)
 }
 
 func (job *displayJob) hooks() displayHooks {
@@ -497,6 +502,7 @@ func (m *displayManager) take(job *displayJob, text string) error {
 		if e := mem.writeText(text); e != nil {
 			return e
 		}
+		job.shown = text
 		t, e := mem.tick()
 		if e != nil {
 			return e
@@ -595,6 +601,15 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 				job.own, job.stby = false, false
 				return e
 			}
+			if h.Live != nil && text != " " {
+				if live := h.Live(); live != job.shown {
+					// In place: the selector stays, so a short text does not restart.
+					if e = mem.writeText(live); e != nil {
+						return e
+					}
+					job.shown = live
+				}
+			}
 			t, e := mem.tick()
 			if e != nil {
 				return e
@@ -648,9 +663,16 @@ func (m *displayManager) run(job *displayJob) {
 		end(err)
 		return
 	}
-	passTime, gap, loop := displayPassTime(r.Text), displayGap, job.hooks().Loop
+	h := job.hooks()
+	passTime, gap, loop := displayPassTime(r.Text), displayGap, h.Loop
+	text := func() string {
+		if h.Live != nil {
+			return h.Live()
+		}
+		return r.Text
+	}
 	for m.more(job) {
-		err := m.show(job, r.Text, passTime)
+		err := m.show(job, text(), passTime)
 		if err == nil {
 			job.pass++
 			if !m.more(job) {

@@ -1,7 +1,8 @@
 import {byId} from './dom.js';
 // Timers on the front display (extension bar91.timer). They work with the bar
-// on or in standby; when one ends, its text shows until a key of the bar's
-// remote is pressed, it is cancelled here, or 10 minutes pass.
+// on or in standby; when one ends, TIME'S UP and its name scroll until a key of
+// the bar's remote is pressed, it is cancelled here, or 10 minutes pass. The
+// name is optional.
 const MAX_MINUTES = 720;
 // Like the remote: upper case, no accents; letters, digits, space and - . ' (the
 // characters the display shows correctly)
@@ -22,10 +23,9 @@ export function createTimer(root, {request}) {
     const m = Number(minutes.value);
     if (!validText(name)) return {error: "Text: letters, digits, space and - . ' only (31 at most)."};
     if (!Number.isInteger(m) || m < 1 || m > MAX_MINUTES) return {error: 'Duration: 1 to 720 minutes.'};
-    const shown = name || 'TIMER';
-    if (timers().some(t => t.text === shown)) return {error: 'A timer named ' + shown + ' is already running. Choose another text.'};
+    if (timers().some(t => t.text === name)) return {error: name ? 'A timer named ' + name + ' is already running. Choose another name.' : 'A timer without a name is already running. Give this one a name.'};
     if (timers().length >= 8) return {error: 'At most 8 timers at a time.'};
-    return {parameters: {text: name || 'TIMER', duration_s: m * 60, countdown: countdown.checked}};
+    return {parameters: {...(name ? {text: name} : {}), duration_s: m * 60, countdown: countdown.checked}};
   }
   function renderList() {
     const now = Date.now();
@@ -34,14 +34,14 @@ export function createTimer(root, {request}) {
       const item = root.ownerDocument.createElement('li');
       item.className = 'timer-item' + (t.ringing ? ' ringing' : '');
       const name = root.ownerDocument.createElement('span');
-      name.className = 'timer-name'; name.textContent = t.text;
+      name.className = 'timer-name'; name.textContent = t.text || 'Timer';
       const time = root.ownerDocument.createElement('span');
       time.className = 'timer-time';
-      time.textContent = t.ringing ? 'Ringing · press any key on the JBL remote' : timerClock(t.remaining_ms - (now - received)) + (t.countdown ? ' · minutes shown on the bar' : '');
+      time.textContent = t.ringing ? 'Ringing · press any key on the JBL remote' : timerClock(t.remaining_ms - (now - received)) + (t.countdown ? ' · shown on the bar' : '');
       const cancel = root.ownerDocument.createElement('button');
       cancel.type = 'button'; cancel.className = 'timer-cancel'; cancel.dataset.timer = t.id;
       cancel.textContent = cancelling === t.id ? 'Cancelling…' : t.ringing ? 'Stop' : 'Cancel';
-      cancel.setAttribute('aria-label', (t.ringing ? 'Stop ' : 'Cancel ') + t.text);
+      cancel.setAttribute('aria-label', (t.ringing ? 'Stop ' : 'Cancel ') + (t.text || 'the timer'));
       cancel.disabled = !latest?.ready || !!latest?.active;
       item.append(name, time, cancel);
       return item;

@@ -12,19 +12,22 @@ import (
 )
 
 // Timers on the front display (extension bar91.timer). A timer counts down in
-// the remote and, on request, shows the minutes left once a minute
-// (4 MIN, one pass). When it ends, TIME'S UP and its text scroll in a loop
-// until a key of the bar's remote is pressed (on or in standby), it is
-// cancelled, or 10 minutes pass. Qualified on the owner's Bar 9.1 on 10 Nov 2026: the key flag
-// (vfdKeyFlag) rises on every key press, also in standby. A countdown
-// rewritten every second does not work: a text longer than the display
-// scrolls and each rewrite restarts it. Timers do not survive a restart.
+// the remote. With the countdown option, the bar shows the time left: when
+// it is the only timer running, second by second (4'59, short enough not to
+// scroll); when several run, once a minute, each in turn (4 MIN LEFT PIZZA).
+// When it ends, TIME'S UP and its name scroll in a loop until a key of the
+// bar's remote is pressed (on or in standby), it is cancelled, or 10 minutes
+// pass. Qualified on the owner's Bar 9.1 on 10 Nov 2026: the key flag
+// (vfdKeyFlag) rises on every key press, also in standby; a short text
+// rewritten in place stays still, a longer one scrolls and each rewrite
+// restarts it. Timers do not survive a restart.
 const (
-	timerDefaultText = "TIMER"
-	timerMaxCount    = 8
-	timerMaxDuration = 12 * time.Hour
-	timerAlarmFor    = 10 * time.Minute
-	timerDisplayID   = "timer-"
+	timerUnnamedAlarm = "TIME'S UP - PRESS ANY KEY" // a timer without a name
+	timerTick         = 250 * time.Millisecond      // countdown display loop
+	timerMaxCount     = 8
+	timerMaxDuration  = 12 * time.Hour
+	timerAlarmFor     = 10 * time.Minute
+	timerDisplayID    = "timer-"
 )
 
 var errTimerNotFound = errors.New("no such timer")
@@ -69,7 +72,7 @@ func (m *timerManager) Run(ctx context.Context) {
 	m.mu.Lock()
 	m.root = ctx
 	m.mu.Unlock()
-	<-ctx.Done()
+	m.countdowns(ctx)
 	m.mu.Lock()
 	for _, t := range m.timers {
 		t.cancel()
@@ -78,20 +81,35 @@ func (m *timerManager) Run(ctx context.Context) {
 	m.mu.Unlock()
 }
 
-// timerReminder is the once-a-minute reminder, time first so that it does not
-// read as the alarm: 4 MIN with one timer running, 4 MIN LEFT PATES with
-// several (owner's choice, 10 Nov 2026).
-func timerReminder(name string, minutes int, several bool) string {
-	left := fmt.Sprintf("%d MIN", minutes)
-	if several && len(left)+len(" LEFT ")+len(name) <= displayTextMax {
-		return left + " LEFT " + name
+// timerClock is the time left as the display reads it well and without
+// scrolling: 4'59, 1H04'59 (':' does not show correctly).
+func timerClock(left time.Duration) string {
+	if left < 0 {
+		left = 0
+	}
+	sec := int((left + time.Second - 1) / time.Second)
+	if sec >= 3600 {
+		return fmt.Sprintf("%dH%02d'%02d", sec/3600, sec/60%60, sec%60)
+	}
+	return fmt.Sprintf("%d'%02d", sec/60, sec%60)
+}
+
+// timerReminder is the once-a-minute reminder when several timers run, time
+// first so that it does not read as the alarm: 4 MIN LEFT PIZZA.
+func timerReminder(name string, minutes int) string {
+	left := fmt.Sprintf("%d MIN LEFT", minutes)
+	if name != "" && len(left)+1+len(name) <= displayTextMax {
+		return left + " " + name
 	}
 	return left
 }
 
-// timerAlarmText is long enough to scroll on the display (a short text only
-// blinks between passes): TIME'S UP PATES.
+// timerAlarmText is long enough to scroll (a short text only blinks between
+// passes): TIME'S UP PIZZA, or TIME'S UP - PRESS ANY KEY without a name.
 func timerAlarmText(name string) string {
+	if name == "" {
+		return timerUnnamedAlarm
+	}
 	if text := "TIME'S UP " + name; len(text) <= displayTextMax {
 		return text
 	}
@@ -116,15 +134,15 @@ func parseTimerStart(data json.RawMessage) (timerRequest, error) {
 	if p.DurationS == nil || *p.DurationS < 1 || time.Duration(*p.DurationS)*time.Second > timerMaxDuration {
 		return timerRequest{}, errors.New("duration_s: 1 to 43200 (12 h)")
 	}
-	raw := p.Text
-	if strings.TrimSpace(raw) == "" {
-		raw = timerDefaultText
+	r := timerRequest{For: time.Duration(*p.DurationS) * time.Second, Countdown: p.Countdown}
+	if strings.TrimSpace(p.Text) != "" { // no name: the alarm says TIME'S UP - PRESS ANY KEY
+		text, err := displayText(p.Text)
+		if err != nil {
+			return timerRequest{}, err
+		}
+		r.Text = text
 	}
-	text, err := displayText(raw)
-	if err != nil {
-		return timerRequest{}, err
-	}
-	return timerRequest{Text: text, For: time.Duration(*p.DurationS) * time.Second, Countdown: p.Countdown}, nil
+	return r, nil
 }
 
 func parseTimerCancel(data json.RawMessage) (string, error) {
@@ -149,6 +167,9 @@ func (m *timerManager) Start(r timerRequest) (string, error) {
 		return "", errors.New("timers are not running")
 	}
 	for _, t := range m.timers {
+		if t.Text == r.Text && r.Text == "" {
+			return "", errors.New("a timer without a name is already running; give this one a name")
+		}
 		if t.Text == r.Text {
 			return "", fmt.Errorf("a timer named %s is already running", r.Text)
 		}
@@ -212,24 +233,6 @@ func (m *timerManager) remove(t *barTimer) {
 }
 
 func (m *timerManager) run(ctx context.Context, t *barTimer) {
-	displayID := timerDisplayID + t.ID
-	// Reminders: one pass at each whole minute left (none at the start or
-	// in the last minute). The same display id replaces an unfinished one.
-	for t.Countdown {
-		minutes := int((t.Deadline.Sub(m.port.now()) - time.Nanosecond) / time.Minute)
-		if minutes < 1 {
-			break
-		}
-		if m.port.sleep(ctx, t.Deadline.Add(-time.Duration(minutes)*time.Minute).Sub(m.port.now())) != nil {
-			return // cancelled
-		}
-		m.mu.Lock()
-		several := len(m.timers) > 1
-		m.mu.Unlock()
-		if err := m.display.Show(displayRequest{ID: displayID, Text: timerReminder(t.Text, minutes, several), Mode: displayPasses, Passes: 1}); err != nil {
-			m.logf("Timer %s: reminder not shown: %v", t.Text, err)
-		}
-	}
 	if m.port.sleep(ctx, t.Deadline.Sub(m.port.now())) != nil {
 		return // cancelled
 	}
@@ -240,17 +243,93 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 	}
 	t.Ringing = true
 	m.mu.Unlock()
-	// Same id: the alarm replaces a reminder still showing.
+	// Same display id: the alarm replaces the countdown or a reminder.
 	done := func(reason string) {
 		if reason != "cancelled" {
 			m.logf("Timer %s: alarm ended (%s)", t.Text, reason)
 		}
 		m.remove(t)
 	}
-	err := m.display.Show(displayRequest{ID: displayID, Text: timerAlarmText(t.Text), Mode: displayUntil, For: timerAlarmFor, Passes: 1,
+	err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: timerAlarmText(t.Text), Mode: displayUntil, For: timerAlarmFor, Passes: 1,
 		Hooks: &displayHooks{StopOnKey: true, Loop: true, Done: done}})
 	if err != nil {
 		m.logf("Timer %s: alarm not shown: %v", t.Text, err)
 		m.remove(t)
+	}
+}
+
+// countdowns shows the time left of the timers that asked for it. One timer
+// running: its clock, second by second, in place (4'59). Several: once a
+// minute, a round where each one with the option shows 4 MIN LEFT PIZZA in
+// turn; rounds follow the minutes of the timer that ends first.
+func (m *timerManager) countdowns(ctx context.Context) {
+	live := ""          // timer whose clock shows
+	var round time.Time // next round of reminders (several timers)
+	for {
+		now := m.port.now()
+		m.mu.Lock()
+		var running, counting []*barTimer
+		for _, t := range m.timers {
+			if !t.Ringing {
+				running = append(running, t)
+				if t.Countdown {
+					counting = append(counting, t)
+				}
+			}
+		}
+		m.mu.Unlock()
+		sort.Slice(counting, func(i, j int) bool { return counting[i].Deadline.Before(counting[j].Deadline) })
+		want := ""
+		if len(running) == 1 && len(counting) == 1 {
+			want = counting[0].ID
+		}
+		if live != "" && live != want {
+			// Its clock stops: still running (another timer started), or ringing
+			// or cancelled, whose alarm or cancel already replaced it.
+			for _, t := range running {
+				if t.ID == live {
+					m.display.Cancel(timerDisplayID + live)
+				}
+			}
+			live = ""
+		}
+		if want != "" && live != want {
+			t := counting[0]
+			clock := func() string { return timerClock(t.Deadline.Sub(m.port.now())) }
+			if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: clock(), Mode: displayForever, Passes: 1,
+				Hooks: &displayHooks{Live: clock, Loop: true}}); err != nil {
+				m.logf("Timer %s: countdown not shown: %v", t.Text, err)
+			}
+			live = want
+		}
+		if want == "" && len(running) > 1 && len(counting) > 0 {
+			if round.IsZero() || round.Before(now.Add(-time.Minute)) {
+				// The next whole minute left of the first timer to end that
+				// has a minute or more left.
+				round = time.Time{}
+				for _, t := range counting {
+					if minutes := int((t.Deadline.Sub(now) - time.Nanosecond) / time.Minute); minutes >= 1 {
+						round = t.Deadline.Add(-time.Duration(minutes) * time.Minute)
+						break
+					}
+				}
+			}
+			if !round.IsZero() && !now.Before(round) {
+				for _, t := range counting {
+					// Nearest minute: at a round, the first timer has just under N min left.
+					if minutes := int((t.Deadline.Sub(now) + time.Minute/2) / time.Minute); minutes >= 1 {
+						if err := m.display.Show(displayRequest{ID: timerDisplayID + t.ID, Text: timerReminder(t.Text, minutes), Mode: displayPasses, Passes: 1}); err != nil {
+							m.logf("Timer %s: reminder not shown: %v", t.Text, err)
+						}
+					}
+				}
+				round = round.Add(time.Minute)
+			}
+		} else {
+			round = time.Time{}
+		}
+		if m.port.sleep(ctx, timerTick) != nil {
+			return
+		}
 	}
 }
