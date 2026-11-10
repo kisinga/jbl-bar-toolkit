@@ -217,7 +217,11 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .timer-check{display:flex;gap:9px;align-items:center;font-size:var(--font-small);min-height:44px}
 .timer-check input{width:20px;height:20px}
 #timer-sound{margin-top:0;max-width:16em}
-#timer-sound-hint{color:var(--muted);font-size:var(--font-small)}
+#timer-sound-hint,#timer-volume-hint{color:var(--muted);font-size:var(--font-small)}
+.timer-sound-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(9em,1fr));gap:12px;padding-left:12px;border-left:2px solid var(--line)}
+.timer-sound-options[hidden]{display:none}
+#timer-volume-hint{grid-column:1/-1}
+#timer-ring{margin-top:0}
 #timer-start{font-size:var(--font-small);justify-self:start}
 #timer-state{display:block;margin-top:12px;color:var(--muted)}
 .timer-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}

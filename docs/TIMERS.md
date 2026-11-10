@@ -24,6 +24,10 @@ The **Timers** panel has:
   - **Always**: it rings even during a film;
   - **Off**.
 
+  With a sound, two more settings appear:
+  - **Volume at least**, 1 to 30, 15 by default. The bar is unmuted and turned up to this volume if it is lower, never down.
+  - **Ring for**: 10 s, 30 s (default), 1 min or 2 min. The chime repeats this long, then the bar returns to its volume, source or standby. The `TIME'S UP` text goes on until a key.
+
 Running timers are listed with their time left and a Cancel button. A ringing timer offers Stop. The panel works with the bar in standby.
 
 ## Rules
@@ -42,13 +46,17 @@ Running timers are listed with their time left and a Cancel button. A ringing ti
   - waking from standby does not wake the TV;
   - afterwards, the bar stays on Chromecast and stays on.
 
-  So the remote then puts it back: standby if it was in standby, or its source (TV, HDMI, Bluetooth). It does this under the action gate, reported as "Timer sound". Timers that end together ring once. A Chromecast or AirPlay source is left as it is.
+  **Volume.** The bar's volume is the Cast master volume: native ≈ Cast level × 32 (0.50 gave 16, 0.34 gave 11). The remote sets it through the Cast receiver and reads the native volume back, correcting by a step or two. It does this beside the playback, so the Cast connection keeps answering heartbeats; the first ring may start a moment quieter. It unmutes if needed and never lowers the volume.
+
+  **Ringing.** The chime is loaded again each time it finishes, until the ringing time has passed. A key on the JBL remote, or Stop, ends the timer and its sound together.
+
+  **Afterwards**, the remote puts everything back, even when the sound was stopped early: volume and mute, then standby if the bar was in standby, or its source (TV, HDMI, Bluetooth). It does this under the action gate, reported as "Timer sound". Timers that end together ring once. A Chromecast or AirPlay source is left as it is.
 - **The bar's own messages come first**, like for display messages: volume, `HELLO` on wake-up and so on.
 - **`display_cancel`** without an id stops display messages, not timers.
 
 ## API
 
-`GET /api/features` lists the `bar91.timer` extension. The state carries the timers under `extensions["bar91.timer"].timers`. Each entry has `id`, `text` (empty without a name), `countdown`, `sound`, `remaining_ms` (as of that state) and `ringing`.
+`GET /api/features` lists the `bar91.timer` extension. The state carries the timers under `extensions["bar91.timer"].timers`. Each entry has `id`, `text` (empty without a name), `countdown`, `sound`, `sound_volume`, `ring_s`, `remaining_ms` (as of that state) and `ringing`.
 
 ```json
 {"action":"bar91.timer.start","parameters":{"text":"Pizza","duration_s":600,"countdown":true,"sound":"unless_tv"}}
@@ -57,7 +65,7 @@ Running timers are listed with their time left and a Cancel button. A ringing ti
 ```
 
 The short aliases are `timer_start` and `timer_cancel`.
-- **Start:** `duration_s` is required (1 to 43200). `text`, `countdown` and `sound` (`off`, the default for the API, `unless_tv` or `always`) are optional.
+- **Start:** `duration_s` is required (1 to 43200). `text`, `countdown`, `sound` (`off`, the default for the API, `unless_tv` or `always`), `sound_volume` (1 to 30, default 15) and `ring_s` (3 to 300, default 30) are optional.
 - **Refused:** an invalid name, a name already in use (or a second timer without a name), a ninth timer, an unknown id and unknown fields.
 
 ## Tests
@@ -78,9 +86,9 @@ The short aliases are `timer_start` and `timer_cancel`.
 - the limit of 8 timers;
 - the sound (`timer_sound_test.go`):
   - the chime is a valid WAV of about 2.8 s, without clipping;
-  - the Cast exchange with a simulated receiver: launch, heartbeat, load, played to the end, and a refused load;
+  - the Cast exchange with a simulated receiver: launch, heartbeat, load, played to the end, a refused load, and ringing again until the time is up;
   - the TV and restore rules;
   - the sound played once when its timer rings, and not for a timer without sound;
-  - the parameter.
+  - the parameters (mode, volume, ringing time, with defaults).
 
 `tests/webremote-ui.mjs` covers the panel: a name or none, a duplicate refused, standby, a ringing timer, and 320 px.

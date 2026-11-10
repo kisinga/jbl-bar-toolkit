@@ -776,12 +776,15 @@ try {
   await page.reload();
   await page.waitForFunction(()=>!document.querySelector('#timer-panel').hidden && !document.querySelector('#timer-start').disabled);
   check(await page.locator('#timer-minutes').inputValue()==='5' && await page.locator('#timer-text').getAttribute('placeholder')==='PIZZA','timer defaults: 5 minutes, name optional');
+  await page.locator('#timer-volume').fill('31');
+  check(await page.locator('#timer-start').isDisabled() && /Volume: 1 to 30/.test(await page.locator('#timer-state').textContent()),'a volume above 30 is refused');
+  await page.locator('#timer-volume').fill('15');
   await page.locator('#timer-text').fill('pâtes');
   await page.locator('[data-minutes="10"]').click();
   await page.locator('#timer-countdown').check();
   await page.locator('#timer-start').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true,sound:'unless_tv'}}),'start sends the folded text, the duration in seconds, the countdown choice and the sound (unless TV by default)');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true,sound:'unless_tv',sound_volume:15,ring_s:30}}),'start sends the folded text, the duration in seconds, the countdown choice and the sound (unless TV, volume at least 15, 30 s by default)');
   check(await page.locator('#timer-text').inputValue()==='','the text field clears after a timer starts');
   check(/^(10'00|9'5\d) · shown on the bar · sound unless TV$/.test(await page.locator('.timer-time').textContent()),'the list shows the time left as the bar writes it');
   const timeBefore=await page.locator('.timer-time').textContent();
@@ -793,6 +796,7 @@ try {
   await page.locator('[data-minutes="1"]').click();
   await page.locator('#timer-countdown').uncheck();
   await page.locator('#timer-sound').selectOption('off');
+  check(await page.locator('#timer-sound-options').isHidden(),'volume and ringing time hide when the sound is off');
   await page.locator('#timer-start').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===2);
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{duration_s:60,countdown:false,sound:'off'}}),'a timer without a name sends no text; the sound can be turned off');
@@ -810,7 +814,11 @@ try {
   state.extensions['bar91.timer'].timers.push({id:'t2',text:'LESSIVE',countdown:false,remaining_ms:754000,ringing:false});
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===2);
   await page.evaluate(()=>document.activeElement.blur());
+  await page.locator('#timer-sound').selectOption('unless_tv');
+  await page.locator('#timer-text').fill('pizza');
   await page.locator('#timer-panel').screenshot({path:fileURLToPath(new URL('build/timer-panel.png',root))});
+  await page.locator('#timer-text').fill('');
+  await page.locator('#timer-sound').selectOption('off');
   state.extensions['bar91.timer'].timers.pop();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
   await page.setViewportSize({width:320,height:900});

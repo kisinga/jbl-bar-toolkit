@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"net"
+	"time"
 )
 
 // Sound at the end of a timer. The remote asks the bar's own Cast receiver
@@ -20,12 +21,26 @@ const (
 	timerSoundUnlessTV = "unless_tv" // not when the bar is on TV, optical or HDMI
 	timerSoundAlways   = "always"
 
+	timerSoundVolume    = 15               // default minimum volume while ringing
+	timerSoundVolumeMax = 30               // bar volume steps offered
+	timerSoundRing      = 30 * time.Second // default ringing time
+	// castVolumeSteps: native volume ≈ Cast level × 32 (owner's bar,
+	// 10 Nov 2026: 0.50 gave 16, 0.34 gave 11). Readback corrects rounding.
+	castVolumeSteps = 32
+
 	castDefaultReceiver = "CC1AD845" // Cast Default Media Receiver
 	castSoundSender     = "jbl-remote-sound"
 	timerChimeRate      = 22050
 )
 
 var errCastSoundFailed = errors.New("the Cast receiver could not play the sound")
+
+// timerSoundOptions is what rings when a timer ends.
+type timerSoundOptions struct {
+	Mode    string
+	Volume  int           // minimum volume while ringing (raised, never lowered; unmuted)
+	RingFor time.Duration // the chime repeats this long, unless the timer is stopped first
+}
 
 func validTimerSound(mode string) bool {
 	return mode == timerSoundOff || mode == timerSoundUnlessTV || mode == timerSoundAlways
@@ -67,10 +82,12 @@ func timerChime() []byte {
 }
 
 // castPlayConnection launches the Default Media Receiver on an open Cast
-// connection, loads url and waits until it has played. errCastSoundFailed
+// connection, calls launched (to adjust the volume), loads url and plays it
+// again each time it finishes until ringFor has passed. errCastSoundFailed
 // means the receiver refused or could not fetch the media (the caller may try
-// another address); the caller bounds the time with the connection deadline.
-func castPlayConnection(conn net.Conn, url, contentType string) error {
+// another address); the caller bounds the time with the connection deadline
+// and stops early by closing the connection.
+func castPlayConnection(conn net.Conn, url, contentType string, ringFor time.Duration, launched func()) error {
 	connect := map[string]any{"type": "CONNECT", "origin": map[string]any{}}
 	if e := sendCastMessageFrom(conn, castSoundSender, castConnection, "receiver-0", connect); e != nil {
 		return e
@@ -128,10 +145,19 @@ func castPlayConnection(conn net.Conn, url, contentType string) error {
 	if e := sendCastMessageFrom(conn, castSoundSender, castConnection, transport, connect); e != nil {
 		return e
 	}
-	load := map[string]any{"type": "LOAD", "requestId": 2, "autoplay": true, "currentTime": 0,
-		"media": map[string]any{"contentId": url, "contentType": contentType, "streamType": "BUFFERED",
-			"metadata": map[string]any{"metadataType": 0, "title": "Timer"}}}
-	if e := sendCastMessageFrom(conn, castSoundSender, castMedia, transport, load); e != nil {
+	if launched != nil {
+		launched()
+	}
+	until := time.Now().Add(ringFor)
+	request := 1
+	loadMedia := func() error {
+		request++
+		load := map[string]any{"type": "LOAD", "requestId": request, "autoplay": true, "currentTime": 0,
+			"media": map[string]any{"contentId": url, "contentType": contentType, "streamType": "BUFFERED",
+				"metadata": map[string]any{"metadataType": 0, "title": "Timer"}}}
+		return sendCastMessageFrom(conn, castSoundSender, castMedia, transport, load)
+	}
+	if e := loadMedia(); e != nil {
 		return e
 	}
 	played := false
@@ -156,7 +182,12 @@ func castPlayConnection(conn net.Conn, url, contentType string) error {
 				case "IDLE":
 					switch status["idleReason"] {
 					case "FINISHED":
-						return nil
+						if !time.Now().Before(until) {
+							return nil
+						}
+						if e := loadMedia(); e != nil { // ring again
+							return e
+						}
 					case "ERROR":
 						return errCastSoundFailed
 					case "CANCELLED", "INTERRUPTED":

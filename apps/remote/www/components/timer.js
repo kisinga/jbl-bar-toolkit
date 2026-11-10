@@ -15,7 +15,7 @@ export const timerClock = ms => {
 };
 export function createTimer(root, {request}) {
   const $ = id => byId(root, id);
-  const text = $('timer-text'), minutes = $('timer-minutes'), countdown = $('timer-countdown'), sound = $('timer-sound'), start = $('timer-start'), list = $('timer-list');
+  const text = $('timer-text'), minutes = $('timer-minutes'), countdown = $('timer-countdown'), sound = $('timer-sound'), volume = $('timer-volume'), ring = $('timer-ring'), start = $('timer-start'), list = $('timer-list');
   let latest = null, seen = '', received = 0, cancelling = null, starting = null, problem = '';
   const timers = () => latest?.state?.timers || [];
   function draft() {
@@ -23,9 +23,11 @@ export function createTimer(root, {request}) {
     const m = Number(minutes.value);
     if (!validText(name)) return {error: "Text: letters, digits, space and - . ' only (31 at most)."};
     if (!Number.isInteger(m) || m < 1 || m > MAX_MINUTES) return {error: 'Duration: 1 to 720 minutes.'};
+    const v = Number(volume.value);
+    if (sound.value !== 'off' && (!Number.isInteger(v) || v < 1 || v > 30)) return {error: 'Volume: 1 to 30.'};
     if (timers().some(t => t.text === name)) return {error: name ? 'A timer named ' + name + ' is already running. Choose another name.' : 'A timer without a name is already running. Give this one a name.'};
     if (timers().length >= 8) return {error: 'At most 8 timers at a time.'};
-    return {parameters: {...(name ? {text: name} : {}), duration_s: m * 60, countdown: countdown.checked, sound: sound.value}};
+    return {parameters: {...(name ? {text: name} : {}), duration_s: m * 60, countdown: countdown.checked, sound: sound.value, ...(sound.value !== 'off' ? {sound_volume: v, ring_s: Number(ring.value)} : {})}};
   }
   function renderList() {
     const now = Date.now();
@@ -55,11 +57,12 @@ export function createTimer(root, {request}) {
     latest = context;
     const {ready, active} = context;
     const d = draft();
+    $('timer-sound-options').hidden = sound.value === 'off';
     start.disabled = !ready || !!active || !!d.error;
     start.textContent = active === 'timer_start' ? 'Starting…' : 'Start timer';
     if (active !== 'timer_cancel') cancelling = null;
     const running = timers().length;
-    $('timer-state').textContent = problem || (d.error && (text.value || minutes.value !== '5') ? d.error : !ready ? 'Timers need the connection to the soundbar.' : running ? running + (running > 1 ? ' timers' : ' timer') + ' running. They also work with the bar in standby.' : 'The text shows on the bar when the time is up, until you press any key on the JBL remote (10 minutes at most).');
+    $('timer-state').textContent = problem || (d.error ? d.error : !ready ? 'Timers need the connection to the soundbar.' : running ? running + (running > 1 ? ' timers' : ' timer') + ' running. They also work with the bar in standby.' : 'When the time is up, TIME\'S UP shows on the bar until you press any key on the JBL remote (10 minutes at most).');
     renderList();
   }
   const refresh = () => { problem = ''; if (latest) render(latest); };
@@ -67,6 +70,8 @@ export function createTimer(root, {request}) {
   minutes.addEventListener('input', refresh);
   countdown.addEventListener('change', refresh);
   sound.addEventListener('change', refresh);
+  volume.addEventListener('input', refresh);
+  ring.addEventListener('change', refresh);
   for (const preset of root.querySelectorAll('[data-minutes]')) preset.addEventListener('click', () => { minutes.value = preset.dataset.minutes; refresh(); });
   start.addEventListener('click', () => {
     const d = draft();

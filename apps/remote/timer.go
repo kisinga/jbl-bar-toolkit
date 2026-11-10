@@ -37,9 +37,13 @@ type barTimer struct {
 	Text      string
 	Countdown bool
 	Sound     string // timerSoundOff, timerSoundUnlessTV or timerSoundAlways
-	Deadline  time.Time
-	Ringing   bool
-	cancel    context.CancelFunc
+	// SoundVolume is the minimum volume while the sound rings; RingFor how
+	// long it rings (see timerSoundOptions).
+	SoundVolume int
+	RingFor     time.Duration
+	Deadline    time.Time
+	Ringing     bool
+	cancel      context.CancelFunc
 }
 
 // timerStatus is what the page and Home Assistant see.
@@ -48,6 +52,8 @@ type timerStatus struct {
 	Text        string `json:"text"`
 	Countdown   bool   `json:"countdown"`
 	Sound       string `json:"sound"`
+	SoundVolume int    `json:"sound_volume,omitempty"`
+	RingS       int    `json:"ring_s,omitempty"`
 	RemainingMS int64  `json:"remaining_ms"`
 	Ringing     bool   `json:"ringing"`
 }
@@ -61,7 +67,8 @@ type timerManager struct {
 	next    int
 	timers  map[string]*barTimer
 	// sound plays the end-of-timer sound (timer_sound_bar91.go); nil: none.
-	sound func(ctx context.Context, mode string)
+	// ctx ends when the timer is stopped (a key, Stop, 10 minutes).
+	sound func(ctx context.Context, o timerSoundOptions)
 }
 
 func newTimerManager(display *displayManager, port displayPort, logf func(string, ...any)) *timerManager {
@@ -121,10 +128,12 @@ func timerAlarmText(name string) string {
 }
 
 type timerRequest struct {
-	Text      string
-	For       time.Duration
-	Countdown bool
-	Sound     string
+	Text        string
+	For         time.Duration
+	Countdown   bool
+	Sound       string
+	SoundVolume int
+	RingFor     time.Duration
 }
 
 func parseTimerStart(data json.RawMessage) (timerRequest, error) {
@@ -133,6 +142,8 @@ func parseTimerStart(data json.RawMessage) (timerRequest, error) {
 		DurationS *int   `json:"duration_s"`
 		Countdown bool   `json:"countdown"`
 		Sound     string `json:"sound"`
+		Volume    *int   `json:"sound_volume"`
+		RingS     *int   `json:"ring_s"`
 	}
 	if err := extensionParameters(data, &p); err != nil {
 		return timerRequest{}, err
@@ -147,6 +158,24 @@ func parseTimerStart(data json.RawMessage) (timerRequest, error) {
 		return timerRequest{}, errors.New("duration_s: 1 to 43200 (12 h)")
 	}
 	r := timerRequest{For: time.Duration(*p.DurationS) * time.Second, Countdown: p.Countdown, Sound: p.Sound}
+	if p.Sound != timerSoundOff {
+		r.SoundVolume, r.RingFor = timerSoundVolume, timerSoundRing
+	}
+	if p.Volume != nil {
+		if *p.Volume < 1 || *p.Volume > timerSoundVolumeMax {
+			return timerRequest{}, fmt.Errorf("sound_volume: 1 to %d", timerSoundVolumeMax)
+		}
+		r.SoundVolume = *p.Volume
+	}
+	if p.RingS != nil {
+		if *p.RingS < 3 || *p.RingS > 300 {
+			return timerRequest{}, errors.New("ring_s: 3 to 300")
+		}
+		r.RingFor = time.Duration(*p.RingS) * time.Second
+	}
+	if p.Sound == timerSoundOff {
+		r.SoundVolume, r.RingFor = 0, 0
+	}
 	if strings.TrimSpace(p.Text) != "" { // no name: the alarm says TIME'S UP - PRESS ANY KEY
 		text, err := displayText(p.Text)
 		if err != nil {
@@ -193,7 +222,11 @@ func (m *timerManager) Start(r timerRequest) (string, error) {
 	if r.Sound == "" {
 		r.Sound = timerSoundOff
 	}
-	t := &barTimer{ID: fmt.Sprintf("t%d", m.next), Text: r.Text, Countdown: r.Countdown, Sound: r.Sound, Deadline: m.port.now().Add(r.For)}
+	if r.Sound != timerSoundOff && r.SoundVolume == 0 {
+		r.SoundVolume, r.RingFor = timerSoundVolume, timerSoundRing
+	}
+	t := &barTimer{ID: fmt.Sprintf("t%d", m.next), Text: r.Text, Countdown: r.Countdown, Sound: r.Sound,
+		SoundVolume: r.SoundVolume, RingFor: r.RingFor, Deadline: m.port.now().Add(r.For)}
 	ctx, cancel := context.WithCancel(m.root)
 	t.cancel = cancel
 	m.timers[t.ID] = t
@@ -227,7 +260,8 @@ func (m *timerManager) List() []timerStatus {
 		if left < 0 || t.Ringing {
 			left = 0
 		}
-		out = append(out, timerStatus{ID: t.ID, Text: t.Text, Countdown: t.Countdown, Sound: t.Sound, RemainingMS: left.Milliseconds(), Ringing: t.Ringing})
+		out = append(out, timerStatus{ID: t.ID, Text: t.Text, Countdown: t.Countdown, Sound: t.Sound, SoundVolume: t.SoundVolume,
+			RingS: int(t.RingFor / time.Second), RemainingMS: left.Milliseconds(), Ringing: t.Ringing})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].RemainingMS != out[j].RemainingMS {
@@ -257,12 +291,12 @@ func (m *timerManager) run(ctx context.Context, t *barTimer) {
 		return
 	}
 	t.Ringing = true
-	root := m.root
 	m.mu.Unlock()
 	if t.Sound != timerSoundOff && m.sound != nil {
 		// In the background: the alarm text shows meanwhile (a wake-up from
-		// standby replays its pass, like any message).
-		go m.sound(root, t.Sound)
+		// standby replays its pass, like any message). Stopping the timer
+		// (a key, Stop) ends ctx, so the sound stops with it.
+		go m.sound(ctx, timerSoundOptions{Mode: t.Sound, Volume: t.SoundVolume, RingFor: t.RingFor})
 	}
 	// Same display id: the alarm replaces the countdown or a reminder.
 	done := func(reason string) {

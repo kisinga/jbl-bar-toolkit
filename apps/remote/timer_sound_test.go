@@ -70,10 +70,14 @@ func fakeReceiver(t *testing.T, conn net.Conn, loadReply string, got chan<- map[
 		case "LAUNCH":
 			send(castHeartbeat, `{"type":"PING"}`)
 			send(castReceiver, `{"type":"RECEIVER_STATUS","requestId":1,"status":{"applications":[{"appId":"CC1AD845","transportId":"web-7","namespaces":[{"name":"urn:x-cast:com.google.cast.media"}]}]}}`)
-		case "PONG":
-			got <- body
+		case "PONG", "LOAD":
+			select { // never block the receiver on a full report channel
+			case got <- body:
+			default:
+			}
+		}
+		switch body["type"] {
 		case "LOAD":
-			got <- body
 			if loadReply == "fail" {
 				send(castMedia, `{"type":"LOAD_FAILED","requestId":2}`)
 				continue
@@ -94,11 +98,15 @@ func TestCastPlayConnection(t *testing.T) {
 		got := make(chan map[string]any, 4)
 		go fakeReceiver(t, receiver, c.reply, got)
 		_ = client.SetDeadline(time.Now().Add(5 * time.Second))
-		err := castPlayConnection(client, "http://127.0.0.1:4567/x.wav", "audio/wav")
+		launched := false
+		err := castPlayConnection(client, "http://127.0.0.1:4567/x.wav", "audio/wav", 0, func() { launched = true })
 		client.Close()
 		receiver.Close()
 		if err != c.want {
 			t.Fatalf("%s: %v, want %v", c.reply, err, c.want)
+		}
+		if !launched {
+			t.Fatal("launched not called")
 		}
 		if pong := <-got; pong["type"] != "PONG" {
 			t.Fatalf("heartbeat not answered: %v", pong)
@@ -108,6 +116,30 @@ func TestCastPlayConnection(t *testing.T) {
 		if load["type"] != "LOAD" || load["autoplay"] != true || media["contentId"] != "http://127.0.0.1:4567/x.wav" || media["contentType"] != "audio/wav" {
 			t.Fatalf("load %v", load)
 		}
+	}
+}
+
+func TestCastPlayRingsAgainUntilTheTimeIsUp(t *testing.T) {
+	client, receiver := net.Pipe()
+	got := make(chan map[string]any, 64)
+	go fakeReceiver(t, receiver, "ok", got)
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	start := time.Now()
+	err := castPlayConnection(client, "http://x/y.wav", "audio/wav", 300*time.Millisecond, nil)
+	client.Close()
+	receiver.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loads := 0
+	for len(got) > 0 {
+		if (<-got)["type"] == "LOAD" {
+			loads++
+		}
+	}
+	// The fake finishes at once: it is loaded again until 300 ms have passed.
+	if loads < 2 || time.Since(start) < 300*time.Millisecond {
+		t.Fatalf("%d loads in %v", loads, time.Since(start))
 	}
 }
 
@@ -141,7 +173,14 @@ func TestTimerPlaysItsSoundWhenItRings(t *testing.T) {
 	defer stop()
 	var mu sync.Mutex
 	var played []string
-	tm.sound = func(ctx context.Context, mode string) { mu.Lock(); played = append(played, mode); mu.Unlock() }
+	tm.sound = func(ctx context.Context, o timerSoundOptions) {
+		mu.Lock()
+		played = append(played, o.Mode)
+		mu.Unlock()
+		if o.Volume != 15 || o.RingFor != 30*time.Second {
+			t.Errorf("default options %+v", o)
+		}
+	}
 	startTimer(t, tm, `{"text":"pizza","duration_s":1,"sound":"unless_tv"}`)
 	startTimer(t, tm, `{"text":"pates","duration_s":1}`) // no sound
 	waitScreen(t, f, "text:TIME'S UP PIZZA", 20*time.Second)
@@ -158,14 +197,21 @@ func TestTimerPlaysItsSoundWhenItRings(t *testing.T) {
 
 func TestTimerSoundParameter(t *testing.T) {
 	r, err := parseTimerStart(json.RawMessage(`{"duration_s":60}`))
-	if err != nil || r.Sound != "off" {
+	if err != nil || r.Sound != "off" || r.SoundVolume != 0 || r.RingFor != 0 {
 		t.Fatalf("default: %+v %v", r, err)
 	}
 	r, err = parseTimerStart(json.RawMessage(`{"duration_s":60,"sound":"always"}`))
-	if err != nil || r.Sound != "always" {
-		t.Fatalf("always: %+v %v", r, err)
+	if err != nil || r.Sound != "always" || r.SoundVolume != 15 || r.RingFor != 30*time.Second {
+		t.Fatalf("always, defaults: %+v %v", r, err)
 	}
-	if _, err := parseTimerStart(json.RawMessage(`{"duration_s":60,"sound":"loud"}`)); err == nil {
-		t.Fatal("unknown sound accepted")
+	r, err = parseTimerStart(json.RawMessage(`{"duration_s":60,"sound":"unless_tv","sound_volume":22,"ring_s":120}`))
+	if err != nil || r.SoundVolume != 22 || r.RingFor != 2*time.Minute {
+		t.Fatalf("chosen: %+v %v", r, err)
+	}
+	for _, in := range []string{`{"duration_s":60,"sound":"loud"}`, `{"duration_s":60,"sound":"always","sound_volume":0}`,
+		`{"duration_s":60,"sound":"always","sound_volume":31}`, `{"duration_s":60,"sound":"always","ring_s":2}`, `{"duration_s":60,"sound":"always","ring_s":301}`} {
+		if _, err := parseTimerStart(json.RawMessage(in)); err == nil {
+			t.Errorf("%s accepted", in)
+		}
 	}
 }

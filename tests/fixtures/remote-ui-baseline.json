@@ -164,7 +164,11 @@
     "timer-state",
     "timer-list",
     "timer-sound",
-    "timer-sound-hint"
+    "timer-sound-hint",
+    "timer-sound-options",
+    "timer-volume",
+    "timer-ring",
+    "timer-volume-hint"
   ],
   "actions": [
     "atmos_next",
