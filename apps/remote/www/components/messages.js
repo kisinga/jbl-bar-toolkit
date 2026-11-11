@@ -23,9 +23,10 @@ export function howLong(o) {
 export function createMessages(root, {request}) {
   const $ = id => byId(root, id);
   const doc = root.ownerDocument;
+  const keyClears = $('message-stop-on-key');
   const text = $('message-input'), name = $('message-id'), passes = $('message-passes'), send = $('message-send'), list = $('message-list');
   const modeGroup = $('message-mode'), durationGroup = $('message-duration');
-  const o = {mode: 'passes', passes: 1, duration: 300};
+  const o = {mode: 'forever', passes: 1, duration: 300}; // left for someone: until it is seen
   let latest = null, received = 0, seen = '', confirmAll = null, confirmTimer = null;
   let recent = load(RECENT_KEY, []);
   if (!Array.isArray(recent)) recent = [];
@@ -44,6 +45,7 @@ export function createMessages(root, {request}) {
     if (opt.mode === 'forever') p.forever = true;
     else if (opt.mode === 'duration') p.duration_s = opt.duration;
     else p.repeat = opt.passes;
+    if (opt.seen) p.stop_on_key = true;
     return p;
   }
   function draft() {
@@ -52,7 +54,7 @@ export function createMessages(root, {request}) {
     if (!validText(shown)) return {error: shown.length > 31 ? 'At most 31 characters: the bar shows ' + shown.length + '.' : "Letters, digits, space and - . ' only (the display cannot show the others).", field: 'text'};
     if (id && !validId(id)) return {error: 'Name: lower-case letters, digits, - and _ only (32 at most).', field: 'id'};
     if (o.mode === 'passes' && !(Number.isInteger(o.passes) && o.passes >= 1 && o.passes <= 99)) return {error: 'Times: 1 to 99.'};
-    return {shown, id, parameters: parameters(text.value.trim(), id, o)};
+    return {shown, id, parameters: parameters(text.value.trim(), id, {...o, seen: keyClears.checked})};
   }
 
   function el(tag, className, content) {
@@ -77,7 +79,7 @@ export function createMessages(root, {request}) {
       item.dataset.message = m.id;
       const words = el('span', 'message-words');
       const left = m.mode === 'forever' ? 'until cleared' : m.mode === 'duration' ? clock(m.remaining_ms - (Date.now() - received)) + ' left' : m.passes_left === 1 ? 'last time' : m.passes_left + ' times left';
-      words.append(el('span', 'message-text', m.text), el('span', 'message-detail', (m.named ? m.id : 'Unnamed') + ' · ' + left + ' · ' + (m.showing ? 'on the bar now' : 'waiting')));
+      words.append(el('span', 'message-text', m.text), el('span', 'message-detail', (m.named ? m.id : 'Unnamed') + ' · ' + left + (m.stop_on_key ? ' or a key' : '') + ' · ' + (m.showing ? 'on the bar now' : 'waiting')));
       const cancel = button('', 'timer-cancel', () => send_('display_cancel', {id: m.id}), 'Clear ' + (m.named ? m.id : 'the unnamed message'));
       const icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
       icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
@@ -140,13 +142,14 @@ export function createMessages(root, {request}) {
     send.disabled = busy() || !!d.error || !!d.empty;
     send.textContent = context.active === 'display_message' ? 'Sending…' : 'Show on the bar';
     const replaces = d.id ? messages().some(m => m.id === d.id) : messages().some(m => !m.named);
-    $('message-explain').textContent = d.empty || d.error ? '' : 'Shows ' + howLong(o) + ', after the bar\'s own messages and in turn with the others.' + (replaces ? ' It replaces ' + (d.id ? 'the message named ' + d.id : 'the unnamed message') + '.' : '');
+    $('message-explain').textContent = d.empty || d.error ? '' : 'Shows ' + howLong(o) + (keyClears.checked ? ', or until someone presses a key on the JBL remote' : '') + ', after the bar\'s own messages and in turn with the others.' + (replaces ? ' It replaces ' + (d.id ? 'the message named ' + d.id : 'the unnamed message') + '.' : '');
     $('message-state').textContent = d.error && d.field !== 'text' ? d.error : !context.ready ? 'Messages need the connection to the soundbar.' : '';
     renderList();
     renderRecent();
   }
   const refresh = () => { if (latest) render(latest); };
   text.addEventListener('input', refresh);
+  keyClears.addEventListener('change', refresh);
   name.addEventListener('input', refresh);
   passes.addEventListener('input', () => { o.passes = Number(passes.value); refresh(); });
   for (const b of root.querySelectorAll('[data-passes]')) b.addEventListener('click', () => { o.passes = Math.min(99, Math.max(1, (Number(passes.value) || 1) + Number(b.dataset.passes))); passes.value = o.passes; refresh(); });
@@ -186,7 +189,7 @@ export function createMessages(root, {request}) {
     // A message the soundbar took: remember it to send again, clear the form.
     sent(p) {
       if (!p) return;
-      const entry = {text: fold(p.text), id: p.id ?? '', mode: p.forever ? 'forever' : p.duration_s ? 'duration' : 'passes', passes: p.repeat ?? 1, duration: p.duration_s ?? 300};
+      const entry = {text: fold(p.text), id: p.id ?? '', mode: p.forever ? 'forever' : p.duration_s ? 'duration' : 'passes', passes: p.repeat ?? 1, duration: p.duration_s ?? 300, seen: !!p.stop_on_key};
       recent = [entry, ...recent.filter(r => r.text !== entry.text || r.id !== entry.id)].slice(0, RECENT_MAX);
       save(RECENT_KEY, recent);
       if (fold(text.value) === entry.text) text.value = '';

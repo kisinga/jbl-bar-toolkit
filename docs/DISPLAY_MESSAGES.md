@@ -31,7 +31,8 @@ The **Messages** panel works with the bar on or in standby:
 - **Leave a message**:
   - the text, previewed as the bar shows it (`The bar shows: FRIGO FERME`). A character the display cannot show is refused under the field;
   - an optional name;
-  - **How long**, folded, with its choice in the summary: a number of times (1 to 99, once by default), for a while (1, 5 or 15 minutes, or 1 hour), or until cleared;
+  - **Clear it with a key on the JBL remote**, on by default: whoever reads the message presses any key, and it goes away, as a sign it was seen;
+  - **How long**, folded, with its choice in the summary: a number of times (1 to 99), for a while (1, 5 or 15 minutes, or 1 hour), or until cleared (the default, since a message left for someone stays until it is seen);
   - under **Show on the bar**, a line says how long it shows and which message it replaces, if any.
 
 ## API
@@ -42,13 +43,14 @@ The **Messages** panel works with the bar on or in standby:
 {"action":"bar91.display-message.show","parameters":{"text":"Frigo ouvert","id":"fridge","forever":true}}
 {"action":"bar91.display-message.show","parameters":{"text":"Frigo fermé","id":"fridge","repeat":1}}
 {"action":"bar91.display-message.show","parameters":{"text":"Colis livré","duration_s":300}}
+{"action":"bar91.display-message.show","parameters":{"text":"Pain dans le four","forever":true,"stop_on_key":true}}
 {"action":"bar91.display-message.cancel","parameters":{"id":"fridge"}}
 {"action":"bar91.display-message.cancel"}
 ```
 
 `display_message` and `display_cancel` are short aliases. A message sent without an `id` has the id `default`: there is one at a time, and `{"id":"default"}` clears it.
 
-The state lists the messages in course under `extensions["bar91.display-message"].messages`, the one showing first. Each entry has `id`, `named` (false for `default`), `text` (as shown), `mode` (`passes`, `duration` or `forever`), `passes_left` or `remaining_ms` (as of that state) and `showing`. Timers and the center level are not listed. `repeat`, `duration_s` and `forever` are mutually exclusive. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
+The state lists the messages in course under `extensions["bar91.display-message"].messages`, the one showing first. Each entry has `id`, `named` (false for `default`), `text` (as shown), `mode` (`passes`, `duration` or `forever`), `passes_left` or `remaining_ms` (as of that state), `showing` and `stop_on_key`. Timers and the center level are not listed. `repeat`, `duration_s` and `forever` are mutually exclusive. With `stop_on_key`, any key on the JBL remote clears the message, on or in standby, like a timer's alarm: only a press seen after a release counts, the keys the remote sends itself do not, and with several such messages a press clears the one shown. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
 
 ## How it works
 

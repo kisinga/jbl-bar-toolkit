@@ -75,7 +75,7 @@ const server = createServer(async (req, res) => {
       if (action === 'av_sync_set') state.sound.av_sync_ms=payload.value;
       if (action === 'bar91.timer.start') { const timers=state.extensions['bar91.timer'].timers; timerIds++; timers.push({id:'t'+timerIds,text:payload.parameters.text??'',countdown:payload.parameters.countdown,sound:payload.parameters.sound??'off',remaining_ms:payload.parameters.duration_s*1000,duration_ms:payload.parameters.duration_s*1000,ringing:false}); }
       if (action === 'bar91.timer.extend') { const t=state.extensions['bar91.timer'].timers.find(t=>t.id===payload.parameters.id); t.remaining_ms+=payload.parameters.add_s*1000; t.duration_ms+=payload.parameters.add_s*1000; }
-      if (action === 'bar91.display-message.show') { const box=state.extensions['bar91.display-message']; const p=payload.parameters; const id=p.id??'default'; const fold=p.text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); const m={id,named:id!=='default',text:fold,mode:p.forever?'forever':p.duration_s?'duration':'passes',showing:box.messages.length===0}; if(p.repeat) m.passes_left=p.repeat; if(!p.forever&&!p.duration_s&&!p.repeat) m.passes_left=1; if(p.duration_s) m.remaining_ms=p.duration_s*1000; const i=box.messages.findIndex(x=>x.id===id); if(i>=0){m.showing=box.messages[i].showing;box.messages[i]=m;} else box.messages.push(m); }
+      if (action === 'bar91.display-message.show') { const box=state.extensions['bar91.display-message']; const p=payload.parameters; const id=p.id??'default'; const fold=p.text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); const m={id,named:id!=='default',text:fold,mode:p.forever?'forever':p.duration_s?'duration':'passes',showing:box.messages.length===0,stop_on_key:!!p.stop_on_key}; if(p.repeat) m.passes_left=p.repeat; if(!p.forever&&!p.duration_s&&!p.repeat) m.passes_left=1; if(p.duration_s) m.remaining_ms=p.duration_s*1000; const i=box.messages.findIndex(x=>x.id===id); if(i>=0){m.showing=box.messages[i].showing;box.messages[i]=m;} else box.messages.push(m); }
       if (action === 'bar91.display-message.cancel') { const box=state.extensions['bar91.display-message']; const id=payload.parameters?.id; box.messages=id?box.messages.filter(m=>m.id!==id):[]; if(box.messages[0]) box.messages[0].showing=true; }
       if (action === 'bar91.timer.cancel') { const box=state.extensions['bar91.timer']; box.timers=box.timers.filter(t=>t.id!==payload.parameters.id); }
       if (action === 'calibrate') state.setup={...state.setup,calibration:'Step 1 starting'};
@@ -915,25 +915,29 @@ try {
   await page.reload();
   await page.waitForFunction(()=>!document.querySelector('#messages-panel').hidden);
   const msgs=()=>state.extensions['bar91.display-message'].messages;
-  check(await page.locator('#messages-current').isHidden() && await page.locator('#message-send').isDisabled() && (await page.locator('#message-options-summary').textContent())==='Once','messages: nothing on the bar, Send waits for a text, once by default');
+  check(await page.locator('#messages-current').isHidden() && await page.locator('#message-send').isDisabled() && (await page.locator('#message-options-summary').textContent())==='Until cleared' && await page.locator('#message-stop-on-key').isChecked(),'messages: nothing on the bar, Send waits for a text; by default until cleared, or a key on the JBL remote');
   await page.locator('#message-input').fill('Frigo fermé');
-  check((await page.locator('#message-preview').textContent())==='The bar shows: FRIGO FERME' && /^Shows once, after the bar's own messages/.test(await page.locator('#message-explain').textContent()),'the text is previewed as the bar shows it, with what will happen');
+  check((await page.locator('#message-preview').textContent())==='The bar shows: FRIGO FERME' && /^Shows until cleared, or until someone presses a key on the JBL remote, after the bar's own messages/.test(await page.locator('#message-explain').textContent()),'the text is previewed as the bar shows it, with what will happen');
   await page.locator('#message-input').fill('Frigo ouvert !');
   check(await page.locator('#message-send').isDisabled() && /Letters, digits/.test(await page.locator('#message-preview').textContent()) && await page.locator('#message-input').getAttribute('aria-invalid')==='true','a character the display cannot show is refused under the field');
   await page.locator('#message-input').fill('Frigo ouvert');
+  await page.locator('#message-options summary').click();
+  await page.locator('[data-mode="passes"]').click();
+  await page.locator('#message-options summary').click();
   await page.locator('#message-send').click();
   await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===1);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Frigo ouvert',repeat:1}}) && await page.locator('#message-input').inputValue()==='','a message without a name is sent once, and the field clears');
-  check(/^Unnamed · last time · on the bar now$/.test(await page.locator('.message-detail').textContent()) && (await page.locator('.message-item .message-text').textContent())==='FRIGO OUVERT','the message on the bar is listed, unnamed');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Frigo ouvert',repeat:1,stop_on_key:true}}) && await page.locator('#message-input').inputValue()==='','a message without a name is sent once, cleared by a key, and the field clears');
+  check(/^Unnamed · last time or a key · on the bar now$/.test(await page.locator('.message-detail').textContent()) && (await page.locator('.message-item .message-text').textContent())==='FRIGO OUVERT','the message on the bar is listed, unnamed');
   await page.locator('#message-input').fill('Colis livre');
   await page.locator('#message-id').fill('colis');
+  await page.locator('#message-stop-on-key').uncheck();
   await page.locator('#message-options summary').click();
   await page.locator('[data-mode="duration"]').click();
   await page.locator('[data-duration="900"]').click();
   check((await page.locator('#message-options-summary').textContent())==='For 15 min' && await page.locator('#message-passes-row').isHidden(),'how long: for a while, 15 min, the count hidden');
   await page.locator('#message-send').click();
   await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===2);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Colis livre',id:'colis',duration_s:900}}),'a named message for 15 min sends its id and duration');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Colis livre',id:'colis',duration_s:900}}),'a named message for 15 min sends its id and duration; without the key option, no stop_on_key');
   check(/^colis · (15:00|14:5\d) left · waiting$/.test(await page.locator('.message-item').nth(1).locator('.message-detail').textContent()),'a named message waiting its turn, with its time left');
   await page.locator('[data-mode="forever"]').click();
   await page.locator('#message-input').fill('Porte');
@@ -949,7 +953,7 @@ try {
   check((await page.locator('.timer-recent-item').filter({hasText:'FRIGO'}).count())===1 && (await page.locator('#message-recent .timer-recent-item').allTextContents()).join('|')==='COLIS LIVRE · for 15 min|FRIGO OUVERT · once','recent messages, the last first');
   await page.locator('#message-recent .timer-recent-item').nth(1).click();
   await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===2);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'FRIGO OUVERT',repeat:1}}),'a recent message is sent again in one tap');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'FRIGO OUVERT',repeat:1,stop_on_key:true}}),'a recent message is sent again in one tap, with its key option');
   await page.locator('.message-item').filter({hasText:'COLIS'}).locator('.timer-cancel').click();
   await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===1);
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.cancel',parameters:{id:'colis'}}),'× clears one message by its id');

@@ -514,3 +514,37 @@ func waitFor(t *testing.T, limit time.Duration, ok func() bool) {
 	}
 	t.Fatal("timed out")
 }
+
+// A message left for someone goes away when they press a key on the JBL
+// remote, as a sign it was seen; one without the option stays.
+func TestDisplayMessageClearedByAKey(t *testing.T) {
+	f, m, stop := startDisplay(t, vfdLevel3None)
+	defer stop()
+	seen, err := parseDisplayShow(json.RawMessage(`{"text":"Frigo ouvert","forever":true,"stop_on_key":true}`))
+	if err != nil || seen.Hooks == nil || !seen.Hooks.StopOnKey {
+		t.Fatalf("%+v %v", seen, err)
+	}
+	if plain, _ := parseDisplayShow(json.RawMessage(`{"text":"Colis","forever":true}`)); plain.Hooks != nil {
+		t.Fatal("stop_on_key without being asked")
+	}
+	if err := m.Show(seen); err != nil {
+		t.Fatal(err)
+	}
+	waitScreen(t, f, "text:FRIGO OUVERT", 10*time.Second)
+	if l := m.List(); len(l) != 1 || !l[0].StopOnKey {
+		t.Fatalf("list %+v", l)
+	}
+	time.Sleep(time.Second / displayScale) // the flag seen released
+	press(f)
+	waitFor(t, 10*time.Second, func() bool { return len(m.List()) == 0 })
+
+	plain, _ := parseDisplayShow(json.RawMessage(`{"text":"Colis","forever":true}`))
+	_ = m.Show(plain)
+	waitScreen(t, f, "text:COLIS", 10*time.Second)
+	time.Sleep(time.Second / displayScale)
+	press(f)
+	time.Sleep(time.Second / displayScale)
+	if len(m.List()) != 1 {
+		t.Fatal("a key cleared a message without the option")
+	}
+}

@@ -137,6 +137,9 @@ func parseDisplayShow(data json.RawMessage) (displayRequest, error) {
 		Repeat    *int   `json:"repeat"`
 		DurationS *int   `json:"duration_s"`
 		Forever   bool   `json:"forever"`
+		// StopOnKey: the message goes away when someone presses a key on
+		// the JBL remote, as a sign it was seen (like a timer's alarm).
+		StopOnKey bool `json:"stop_on_key"`
 	}
 	if err := extensionParameters(data, &p); err != nil {
 		return displayRequest{}, err
@@ -176,6 +179,9 @@ func parseDisplayShow(data json.RawMessage) (displayRequest, error) {
 	}
 	if set > 1 {
 		return displayRequest{}, errors.New("choose one of repeat, duration_s or forever")
+	}
+	if p.StopOnKey {
+		r.Hooks = &displayHooks{StopOnKey: true}
 	}
 	return r, nil
 }
@@ -314,6 +320,7 @@ type displayStatus struct {
 	PassesLeft  int    `json:"passes_left,omitempty"`  // passes mode
 	RemainingMS int64  `json:"remaining_ms,omitempty"` // duration mode, as of this state
 	Showing     bool   `json:"showing"`                // false: waiting for its turn or a free display
+	StopOnKey   bool   `json:"stop_on_key"`            // a key on the JBL remote clears it
 }
 
 // displayInternal tells the messages of features built on the display
@@ -339,7 +346,7 @@ func (m *displayManager) List() []displayStatus {
 		if displayInternal(r.ID) || m.jobs[r.ID] != job || job.ctx.Err() != nil {
 			continue
 		}
-		s := displayStatus{ID: r.ID, Named: r.ID != displayDefaultID, Text: r.Text, Showing: job == m.owner}
+		s := displayStatus{ID: r.ID, Named: r.ID != displayDefaultID, Text: r.Text, Showing: job == m.owner, StopOnKey: job.hooks().StopOnKey}
 		switch r.Mode {
 		case displayForever:
 			s.Mode = "forever"
