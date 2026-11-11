@@ -107,7 +107,9 @@ type remote struct {
 	displayThroughGate atomic.Bool
 	// timerWake: the timer sound woke the bar from standby and will put it
 	// back; the wake automation leaves the mode alone meanwhile (automation.go).
-	timerWake     atomic.Bool
+	timerWake atomic.Bool
+	// rebootRun replaces the restart in tests (reboot_bar91.go).
+	rebootRun     func() error
 	http          *server.Server[state]
 	backend       nativeControls
 	extensions    extension.Registry[state]

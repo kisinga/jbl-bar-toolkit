@@ -2,8 +2,8 @@
 // their existing state-based behavior when feature discovery is unavailable.
 export function createCapabilities(root) {
   let features=null;
-  const known=new Set(['front-eq','center-level','bass-offset','timer','messages','display-clock']);
-  const bindings={'bass_offset_set':['bass-offset','set'],'eq_apply':['front-eq','apply'],'eq_reset':['front-eq','reset'],'center_next':['center-level','next'],'timer_start':['timer','start'],'timer_cancel':['timer','cancel'],'timer_extend':['timer','extend'],'display_message':['messages','show'],'display_cancel':['messages','cancel'],'display_clock':['display-clock','set']};
+  const known=new Set(['front-eq','center-level','bass-offset','timer','messages','reboot','display-clock']);
+  const bindings={'bass_offset_set':['bass-offset','set'],'eq_apply':['front-eq','apply'],'eq_reset':['front-eq','reset'],'center_next':['center-level','next'],'timer_start':['timer','start'],'timer_cancel':['timer','cancel'],'timer_extend':['timer','extend'],'display_message':['messages','show'],'display_cancel':['messages','cancel'],'reboot':['reboot','reboot'],'display_clock':['display-clock','set']};
   function command(action,gains,value,parameters) {
     if(action==='av_sync_up' || action==='av_sync_down') return {action:'av_sync_set'};
     if(action==='av_sync_set') return {action,value};

@@ -204,6 +204,7 @@
     "display-clock",
     "front-eq",
     "messages",
+    "reboot",
     "timer"
   ],
   "levels": {

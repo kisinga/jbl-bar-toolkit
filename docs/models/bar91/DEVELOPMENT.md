@@ -192,6 +192,10 @@ Amplifiers reload defaults on wake, so a saved non-default level (`/var/JBLRemot
 
 The bar shows nothing for a level it does not know, so once applied the level shows on the front display for one pass, like the native bass level: `CTR 1` to `CTR 6`, numbered as in the page, through the display messages (id `center-level`, so steps in a row replace each other and the last level shows). Like any message, it waits while the bar shows something of its own, and without display messages nothing is shown.
 
+### Restart the soundbar (experimental)
+
+For when the bar stops responding, and for developers. The page offers it at the bottom of the System monitor, confirmed by a second tap. The API action `bar91.system.reboot` (alias `reboot`) takes `{"confirm":true}` and refuses anything else, so a stray call cannot cut the sound. The remote answers first, then runs `sync` and BusyBox `reboot` 1.5 s later, so the bar goes through init. The bar is back in about a minute; the page and Home Assistant reconnect by themselves. Like any control, it waits for a running control to finish; if the remote itself no longer answers, restart over SSH (`/bin/busybox reboot`) or unplug the bar.
+
 ### Optional CLI
 
 Use Python’s standard library against the same deployed API:
