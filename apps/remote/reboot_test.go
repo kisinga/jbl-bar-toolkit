@@ -19,12 +19,24 @@ func TestRebootNeedsConfirm(t *testing.T) {
 }
 
 func TestRebootRunsAfterTheReply(t *testing.T) {
-	var ran atomic.Int32
-	scheduleReboot(50*time.Millisecond, func() error { ran.Add(1); return nil }, t.Logf)
+	var synced, ran atomic.Int32
+	saved := syncDisks
+	syncDisks = func() { synced.Add(1) }
+	t.Cleanup(func() { syncDisks = saved })
+	scheduleReboot(50*time.Millisecond, func() error {
+		if synced.Load() != 1 {
+			t.Error("restarted before the disks were synced")
+		}
+		ran.Add(1)
+		return nil
+	}, t.Logf)
 	if ran.Load() != 0 {
 		t.Fatal("restarted before the delay")
 	}
-	time.Sleep(200 * time.Millisecond)
+	// Generous deadline: under -race on a busy CI runner the goroutine can be late.
+	for deadline := time.Now().Add(5 * time.Second); ran.Load() == 0 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if ran.Load() != 1 {
 		t.Fatal("not restarted")
 	}

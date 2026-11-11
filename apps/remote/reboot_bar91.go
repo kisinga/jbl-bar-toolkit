@@ -34,11 +34,15 @@ func parseReboot(data json.RawMessage) error {
 	return nil
 }
 
+// syncDisks flushes the filesystems before the restart; tests replace it, as
+// flushing the host running them can take longer than the delay under test.
+var syncDisks = syscall.Sync
+
 // scheduleReboot runs restart after delay, once the reply has gone out.
 func scheduleReboot(delay time.Duration, restart func() error, logf func(string, ...any)) {
 	go func() {
 		time.Sleep(delay)
-		syscall.Sync()
+		syncDisks()
 		if err := restart(); err != nil {
 			logf("Restart: %v", err)
 		}
