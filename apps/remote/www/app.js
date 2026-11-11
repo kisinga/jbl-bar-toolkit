@@ -7,6 +7,7 @@ import {createDetails} from './components/details.js';
 import {createCapabilities} from './components/capabilities.js';
 import {createBassOffset} from './components/bass-offset.js';
 import {createTimer} from './components/timer.js';
+import {createMessages} from './components/messages.js';
 import {createAdvanced} from './components/advanced.js';
 import {createSpeakers} from './components/speakers.js';
 
@@ -28,7 +29,8 @@ const bassOffset=createBassOffset($('bass-offset-panel'));
 const timer=createTimer($('timer-panel'),{supports:action=>capabilities.command(action).action.includes('.'),request:action=>{if(!csrf||!online||queue.length>=8)return false;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();return true;}});
 const advanced=createAdvanced($('advanced'),$('room-setup'));
 const speakers=createSpeakers($('speaker-view'));
-const components=[bluetooth,sound,playback,system,equalizer,details,advanced,bassOffset,speakers,timer];
+const messages=createMessages($('messages-panel'),{request:action=>{if(!csrf||!online||queue.length>=8)return false;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();return true;}});
+const components=[bluetooth,sound,playback,system,equalizer,details,advanced,bassOffset,speakers,timer,messages];
 let syncTimer=null;
 // Readiness shared by the shell and every component. A control sent from
 // elsewhere (another page, Home Assistant, the wake automation) holds the bar:
@@ -209,6 +211,8 @@ function success(action, s) {
   if (action === 'timer_start') return 'Timer started.';
   if (action === 'timer_cancel') return 'Timer stopped.';
   if (action === 'timer_extend') return 'Time added.';
+  if (action === 'display_message') return 'Message sent to the bar.';
+  if (action === 'display_cancel') return 'Message cleared.';
   if (action === 'center_next') return 'Center level ' + s.sound.center + ' selected.';
   if (action === 'atmos_next') return 'Atmos height: ' + ['Low','Mid','High'][s.sound.atmos] + '.';
   if (action === 'rear_next') return 'Rear speakers: ' + ['Low','Mid','High','Muted'][s.sound.rear] + '.';
@@ -226,6 +230,8 @@ function pendingMessage() {
   if (active === 'timer_start') return 'Starting timer…';
   if (active === 'timer_cancel') return 'Stopping timer…';
   if (active === 'timer_extend') return 'Adding time…';
+  if (active === 'display_message') return 'Sending the message…';
+  if (active === 'display_cancel') return 'Clearing…';
   if (active === 'eq_reset') return 'Restoring original tuning…';
 	if (active === 'night_toggle') return 'Changing night mode… audio may briefly mute.';
 	if (active?.startsWith('media_')) return 'Sending playback control…';
@@ -289,7 +295,7 @@ async function pump() {
   if (active || !queue.length || !online) return;
   active = queue.shift();
   const gains = active === 'eq_apply' ? equalizer.gains() : null;
-  const parameters=active==='bass_offset_set'?bassOffset.parameters():active?.startsWith('timer_')?timer.parameters(active):null;
+  const parameters=active==='bass_offset_set'?bassOffset.parameters():active?.startsWith('timer_')?timer.parameters(active):active?.startsWith('display_')?messages.parameters(active):null;
   const syncTarget=active==='av_sync_set'?advanced.target():null;
   epoch++;
   render();
@@ -309,9 +315,11 @@ async function pump() {
     if (!data.available) throw new Error(data.error || 'Soundbar unavailable.');
     playback.accepted(action,requestPeer,data);
     if(action==='timer_start') timer.started(parameters);
+    if(action==='display_message') messages.sent(parameters);
     feedback(success(action, data), 'success');
   } catch (error) {
     if(action.startsWith('timer_')) timer.failed(action);
+    if(action.startsWith('display_')) messages.failed();
     queue = [];
     clearSyncDraft();
     stopHold();

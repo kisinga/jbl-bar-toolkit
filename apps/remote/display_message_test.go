@@ -465,3 +465,52 @@ func TestDisplayMessagesTakeTurns(t *testing.T) {
 		t.Fatalf("order %q", got)
 	}
 }
+
+// The messages in course, for the page and Home Assistant: the one showing
+// first, the unnamed one marked, timers and the center level left out.
+func TestDisplayListsTheMessagesInCourse(t *testing.T) {
+	f, m, stop := startDisplay(t, vfdLevel3None)
+	defer stop()
+	if l := m.List(); l == nil || len(l) != 0 {
+		t.Fatalf("empty list %#v", l)
+	}
+	for _, r := range []displayRequest{
+		{ID: displayDefaultID, Text: "FRIGO OUVERT", Mode: displayPasses, Passes: 3},
+		{ID: "colis", Text: "COLIS", Mode: displayUntil, For: time.Hour},
+		{ID: "porte", Text: "PORTE", Mode: displayForever, Passes: 1},
+		{ID: timerDisplayID + "t1", Text: "4'59", Mode: displayForever, Passes: 1},
+		{ID: centerDisplayID, Text: "CTR 4", Mode: displayPasses, Passes: 1},
+	} {
+		if err := m.Show(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitScreen(t, f, "text:FRIGO OUVERT", 10*time.Second)
+	l := m.List()
+	if len(l) != 3 || l[0].ID != displayDefaultID || l[0].Named || !l[0].Showing || l[0].Mode != "passes" || l[0].PassesLeft < 1 || l[0].PassesLeft > 3 {
+		t.Fatalf("list %+v", l)
+	}
+	if l[1].ID != "colis" || !l[1].Named || l[1].Showing || l[1].Mode != "duration" || l[1].RemainingMS <= 0 || l[2].Mode != "forever" {
+		t.Fatalf("list %+v", l)
+	}
+	m.Cancel(displayDefaultID)
+	waitFor(t, 10*time.Second, func() bool { l := m.List(); return len(l) == 2 && l[0].ID == "colis" })
+	m.Cancel("") // every message, timers excepted
+	waitFor(t, 10*time.Second, func() bool { return len(m.List()) == 0 })
+	m.mu.Lock()
+	_, timer := m.jobs[timerDisplayID+"t1"]
+	m.mu.Unlock()
+	if !timer {
+		t.Fatal("clearing every message stopped a timer")
+	}
+}
+
+func waitFor(t *testing.T, limit time.Duration, ok func() bool) {
+	t.Helper()
+	for end := time.Now().Add(limit / displayScale); time.Now().Before(end); time.Sleep(time.Millisecond) {
+		if ok() {
+			return
+		}
+	}
+	t.Fatal("timed out")
+}

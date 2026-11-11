@@ -18,6 +18,22 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 8 November 2026, first with a
   - messages with different ids take turns, pass by pass, never on screen together. Each keeps its own count, duration or forever: `HELLO` ×3 and then `GOODBYE` ×2 show `HELLO GOODBYE HELLO GOODBYE HELLO`. One that ends leaves the rotation, and one that arrives joins it.
 - **Cancel** one id, or every message.
 
+## In the page
+
+The **Messages** panel works with the bar on or in standby:
+
+- **On the bar** lists the messages in course:
+  - the one showing first, with a lit dot, then the others in line;
+  - each with its text as the bar shows it, its name (or *Unnamed*), what is left (`3 times left`, `14:52 left`, `until cleared`) and ×;
+  - **Clear the unnamed message**, shown when there are several messages;
+  - **Clear all messages**, which asks for a second tap. Timers are not affected.
+- **Send again** repeats one of the last four messages sent from this device, with its name and how long.
+- **Leave a message**:
+  - the text, previewed as the bar shows it (`The bar shows: FRIGO FERME`). A character the display cannot show is refused under the field;
+  - an optional name;
+  - **How long**, folded, with its choice in the summary: a number of times (1 to 99, once by default), for a while (1, 5 or 15 minutes, or 1 hour), or until cleared;
+  - under **Show on the bar**, a line says how long it shows and which message it replaces, if any.
+
 ## API
 
 `GET /api/features` lists the `bar91.display-message` extension. The usual LAN, same-origin and CSRF protections apply. Both actions return at once; the message is shown in the background.
@@ -30,7 +46,9 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 8 November 2026, first with a
 {"action":"bar91.display-message.cancel"}
 ```
 
-`display_message` and `display_cancel` are short aliases. `repeat`, `duration_s` and `forever` are mutually exclusive. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
+`display_message` and `display_cancel` are short aliases. A message sent without an `id` has the id `default`: there is one at a time, and `{"id":"default"}` clears it.
+
+The state lists the messages in course under `extensions["bar91.display-message"].messages`, the one showing first. Each entry has `id`, `named` (false for `default`), `text` (as shown), `mode` (`passes`, `duration` or `forever`), `passes_left` or `remaining_ms` (as of that state) and `showing`. Timers and the center level are not listed. `repeat`, `duration_s` and `forever` are mutually exclusive. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
 
 ## How it works
 

@@ -147,7 +147,7 @@ func parseDisplayShow(data json.RawMessage) (displayRequest, error) {
 	}
 	r := displayRequest{ID: p.ID, Text: text, Mode: displayPasses, Passes: 1}
 	if r.ID == "" {
-		r.ID = "default"
+		r.ID = displayDefaultID
 	}
 	if !displayIDPattern.MatchString(r.ID) {
 		return displayRequest{}, errors.New("id: 1-32 of a-z 0-9 _ -")
@@ -299,6 +299,60 @@ func (m *displayManager) Show(r displayRequest) error {
 	m.running.Add(1)
 	go m.run(job)
 	return nil
+}
+
+// displayDefaultID is the id of a message sent without one: there is one at
+// a time, a new one replacing it.
+const displayDefaultID = "default"
+
+// displayStatus is a message in the state, for the page and Home Assistant.
+type displayStatus struct {
+	ID          string `json:"id"`
+	Named       bool   `json:"named"` // false: sent without an id ("default")
+	Text        string `json:"text"`
+	Mode        string `json:"mode"`                   // "passes", "duration" or "forever"
+	PassesLeft  int    `json:"passes_left,omitempty"`  // passes mode
+	RemainingMS int64  `json:"remaining_ms,omitempty"` // duration mode, as of this state
+	Showing     bool   `json:"showing"`                // false: waiting for its turn or a free display
+}
+
+// displayInternal tells the messages of features built on the display
+// (timers, the center level), which are not listed: they have their own
+// controls or are fleeting.
+func displayInternal(id string) bool {
+	return strings.HasPrefix(id, timerDisplayID) || id == centerDisplayID
+}
+
+// List gives the messages sent through display_message, the one showing
+// first, then the others in line.
+func (m *displayManager) List() []displayStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	jobs := m.queue
+	if m.owner != nil {
+		jobs = append([]*displayJob{m.owner}, m.queue...)
+	}
+	now := m.port.now()
+	list := []displayStatus{}
+	for _, job := range jobs {
+		r := job.req
+		if displayInternal(r.ID) || m.jobs[r.ID] != job || job.ctx.Err() != nil {
+			continue
+		}
+		s := displayStatus{ID: r.ID, Named: r.ID != displayDefaultID, Text: r.Text, Showing: job == m.owner}
+		switch r.Mode {
+		case displayForever:
+			s.Mode = "forever"
+		case displayUntil:
+			s.Mode = "duration"
+			s.RemainingMS = max(0, job.start.Add(r.For).Sub(now).Milliseconds())
+		default:
+			s.Mode = "passes"
+			s.PassesLeft = max(0, r.Passes-job.pass)
+		}
+		list = append(list, s)
+	}
+	return list
 }
 
 // Cancel stops the message with id, or every message (timers excepted) when id is empty.
@@ -724,7 +778,9 @@ func (m *displayManager) run(job *displayJob) {
 	for m.more(job) {
 		err := m.show(job, text(), passTime)
 		if err == nil {
+			m.mu.Lock() // List reads it
 			job.pass++
+			m.mu.Unlock()
 			if !m.more(job) {
 				// After the last pass, a blank only when the bar is on: in
 				// standby the screen goes back to black anyway.

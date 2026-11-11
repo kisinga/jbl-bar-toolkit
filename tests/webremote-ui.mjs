@@ -75,6 +75,8 @@ const server = createServer(async (req, res) => {
       if (action === 'av_sync_set') state.sound.av_sync_ms=payload.value;
       if (action === 'bar91.timer.start') { const timers=state.extensions['bar91.timer'].timers; timerIds++; timers.push({id:'t'+timerIds,text:payload.parameters.text??'',countdown:payload.parameters.countdown,sound:payload.parameters.sound??'off',remaining_ms:payload.parameters.duration_s*1000,duration_ms:payload.parameters.duration_s*1000,ringing:false}); }
       if (action === 'bar91.timer.extend') { const t=state.extensions['bar91.timer'].timers.find(t=>t.id===payload.parameters.id); t.remaining_ms+=payload.parameters.add_s*1000; t.duration_ms+=payload.parameters.add_s*1000; }
+      if (action === 'bar91.display-message.show') { const box=state.extensions['bar91.display-message']; const p=payload.parameters; const id=p.id??'default'; const fold=p.text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); const m={id,named:id!=='default',text:fold,mode:p.forever?'forever':p.duration_s?'duration':'passes',showing:box.messages.length===0}; if(p.repeat) m.passes_left=p.repeat; if(!p.forever&&!p.duration_s&&!p.repeat) m.passes_left=1; if(p.duration_s) m.remaining_ms=p.duration_s*1000; const i=box.messages.findIndex(x=>x.id===id); if(i>=0){m.showing=box.messages[i].showing;box.messages[i]=m;} else box.messages.push(m); }
+      if (action === 'bar91.display-message.cancel') { const box=state.extensions['bar91.display-message']; const id=payload.parameters?.id; box.messages=id?box.messages.filter(m=>m.id!==id):[]; if(box.messages[0]) box.messages[0].showing=true; }
       if (action === 'bar91.timer.cancel') { const box=state.extensions['bar91.timer']; box.timers=box.timers.filter(t=>t.id!==payload.parameters.id); }
       if (action === 'calibrate') state.setup={...state.setup,calibration:'Step 1 starting'};
       if (action === 'sub_pair') state.setup={...state.setup,sub_pairing:true};
@@ -906,6 +908,69 @@ try {
   await page.locator('.timer-stop').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===0);
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.cancel',parameters:{id:'t2'}}),'Stop sends the timer id');
+  // Messages on the bar's display (extension bar91.display-message).
+  screenshotFeatures={...screenshotFeatures,extensions:[...screenshotFeatures.extensions,{id:'bar91.display-message',component:'messages',included:true,actions:['bar91.display-message.show','bar91.display-message.cancel']}]};
+  state.extensions={...state.extensions,'bar91.display-message':{messages:[]}};
+  await page.setViewportSize({width:390,height:920});
+  await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#messages-panel').hidden);
+  const msgs=()=>state.extensions['bar91.display-message'].messages;
+  check(await page.locator('#messages-current').isHidden() && await page.locator('#message-send').isDisabled() && (await page.locator('#message-options-summary').textContent())==='Once','messages: nothing on the bar, Send waits for a text, once by default');
+  await page.locator('#message-input').fill('Frigo fermé');
+  check((await page.locator('#message-preview').textContent())==='The bar shows: FRIGO FERME' && /^Shows once, after the bar's own messages/.test(await page.locator('#message-explain').textContent()),'the text is previewed as the bar shows it, with what will happen');
+  await page.locator('#message-input').fill('Frigo ouvert !');
+  check(await page.locator('#message-send').isDisabled() && /Letters, digits/.test(await page.locator('#message-preview').textContent()) && await page.locator('#message-input').getAttribute('aria-invalid')==='true','a character the display cannot show is refused under the field');
+  await page.locator('#message-input').fill('Frigo ouvert');
+  await page.locator('#message-send').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===1);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Frigo ouvert',repeat:1}}) && await page.locator('#message-input').inputValue()==='','a message without a name is sent once, and the field clears');
+  check(/^Unnamed · last time · on the bar now$/.test(await page.locator('.message-detail').textContent()) && (await page.locator('.message-item .message-text').textContent())==='FRIGO OUVERT','the message on the bar is listed, unnamed');
+  await page.locator('#message-input').fill('Colis livre');
+  await page.locator('#message-id').fill('colis');
+  await page.locator('#message-options summary').click();
+  await page.locator('[data-mode="duration"]').click();
+  await page.locator('[data-duration="900"]').click();
+  check((await page.locator('#message-options-summary').textContent())==='For 15 min' && await page.locator('#message-passes-row').isHidden(),'how long: for a while, 15 min, the count hidden');
+  await page.locator('#message-send').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===2);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Colis livre',id:'colis',duration_s:900}}),'a named message for 15 min sends its id and duration');
+  check(/^colis · (15:00|14:5\d) left · waiting$/.test(await page.locator('.message-item').nth(1).locator('.message-detail').textContent()),'a named message waiting its turn, with its time left');
+  await page.locator('[data-mode="forever"]').click();
+  await page.locator('#message-input').fill('Porte');
+  await page.locator('#message-id').fill('colis');
+  check(/It replaces the message named colis\.$/.test(await page.locator('#message-explain').textContent()),'the same name says it replaces the message');
+  await page.locator('#message-id').fill('Mauvais nom');
+  check(await page.locator('#message-send').isDisabled() && /^Name: lower-case/.test(await page.locator('#message-state').textContent()),'an invalid name is refused');
+  await page.locator('#message-id').fill('');
+  check(await page.locator('#message-clear-unnamed').isVisible(),'with several messages, the unnamed one can be cleared on its own');
+  await page.locator('#message-clear-unnamed').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===1);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.cancel',parameters:{id:'default'}}),'Clear the unnamed message cancels id default');
+  check((await page.locator('.timer-recent-item').filter({hasText:'FRIGO'}).count())===1 && (await page.locator('#message-recent .timer-recent-item').allTextContents()).join('|')==='COLIS LIVRE · for 15 min|FRIGO OUVERT · once','recent messages, the last first');
+  await page.locator('#message-recent .timer-recent-item').nth(1).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===2);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'FRIGO OUVERT',repeat:1}}),'a recent message is sent again in one tap');
+  await page.locator('.message-item').filter({hasText:'COLIS'}).locator('.timer-cancel').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===1);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.cancel',parameters:{id:'colis'}}),'× clears one message by its id');
+  msgs().push({id:'porte',named:true,text:'PORTE',mode:'forever',showing:false});
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===2);
+  await page.evaluate(()=>document.activeElement.blur());
+  await page.locator('#messages-panel').screenshot({path:fileURLToPath(new URL('build/messages-panel.png',root))});
+  await page.locator('#message-clear-all').click();
+  check(/^Tap again to clear all 2$/.test(await page.locator('#message-clear-all').textContent()) && msgs().length===2,'Clear all asks for a second tap');
+  await page.locator('#message-clear-all').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===0);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.cancel'}) && await page.locator('#messages-current').isHidden(),'the second tap clears every message (cancel without an id)');
+  state.power='Standby';
+  await page.waitForFunction(()=>document.querySelector('#power-label').textContent==='Turn on');
+  await page.locator('#message-input').fill('Bonne nuit');
+  check(!(await page.locator('#message-send').isDisabled()),'messages can be sent with the bar in standby');
+  state.power='On';
+  await page.setViewportSize({width:320,height:900});
+  check(await page.locator('#messages-panel').evaluate(panel=>{const box=panel.getBoundingClientRect();return [...panel.querySelectorAll('input,button,.message-item')].filter(e=>e.getBoundingClientRect().height>0).every(e=>{const r=e.getBoundingClientRect();return r.left>=box.left-1 && r.right<=box.right+1;});}),'message controls stay inside the panel at 320 px');
+  check(await page.locator('#messages-panel button').evaluateAll(buttons=>buttons.filter(b=>b.getBoundingClientRect().height>0).every(b=>b.getBoundingClientRect().height>=44)),'message buttons have 44 px targets');
+  await page.locator('#message-input').fill('');
   state.power='On';
   await page.setViewportSize({width:1200,height:1050});
   await page.locator('.device-details summary').click();

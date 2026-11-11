@@ -2,8 +2,8 @@
 // their existing state-based behavior when feature discovery is unavailable.
 export function createCapabilities(root) {
   let features=null;
-  const known=new Set(['front-eq','center-level','bass-offset','timer']);
-  const bindings={'bass_offset_set':['bass-offset','set'],'eq_apply':['front-eq','apply'],'eq_reset':['front-eq','reset'],'center_next':['center-level','next'],'timer_start':['timer','start'],'timer_cancel':['timer','cancel'],'timer_extend':['timer','extend']};
+  const known=new Set(['front-eq','center-level','bass-offset','timer','messages']);
+  const bindings={'bass_offset_set':['bass-offset','set'],'eq_apply':['front-eq','apply'],'eq_reset':['front-eq','reset'],'center_next':['center-level','next'],'timer_start':['timer','start'],'timer_cancel':['timer','cancel'],'timer_extend':['timer','extend'],'display_message':['messages','show'],'display_cancel':['messages','cancel']};
   function command(action,gains,value,parameters) {
     if(action==='av_sync_up' || action==='av_sync_down') return {action:'av_sync_set'};
     if(action==='av_sync_set') return {action,value};
@@ -24,6 +24,7 @@ export function createCapabilities(root) {
       if(feature.component==='bass-offset') value.bass_offset=projected;
       if(feature.component==='front-eq') value.eq=projected;
       if(feature.component==='timer') value.timers=projected.timers;
+      if(feature.component==='messages') value.messages=projected.messages;
       if(feature.component==='center-level') value.sound={...value.sound,center:projected.level,center_error:projected.error};
     }
     return value;

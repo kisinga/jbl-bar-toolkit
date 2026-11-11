@@ -202,6 +202,7 @@
     "bass-offset",
     "center-level",
     "front-eq",
+    "messages",
     "timer"
   ],
   "levels": {
