@@ -248,7 +248,7 @@ Read `JBLToolkit/STATUS.txt` and the newest `RESULT=... EXIT=...` entry in `setu
 | `STARTUP_HOOK_CHANGED_PRESERVED` / `HOOK_CHANGED_BEFORE_COMMIT` | Another installer/manual change modified the hook. Preserve it; review before retrying. |
 | `RECOVERY_INCOMPLETE_READ_LOG` | A process did not stop or hook ownership did not match. Future toolkit startup is disabled; retain files and review logs, then reboot if needed. |
 
-If no entry log appears, check the USB root, FAT32 and first partition. The soundbar must finish booting and be fully on for the normal install. A global operation lock prevents installation/configuration from overlapping boot's bounded SSH wait. Let it finish before reinsertion. A hard power interruption can leave a stale `/tmp` lock until reboot.
+If no entry log appears, check the USB root, FAT32 and first partition. The soundbar must finish booting and be fully on for the normal install. A global operation lock prevents installation/configuration from overlapping boot's bounded SSH wait. Let it finish before reinsertion. A hard power interruption can leave a stale `/tmp` lock until reboot. Some bars run AutoScript only while booting, never on insertion: unplug mains, insert the USB, reconnect, and turn the bar on within about three minutes. Check, install and configure wait that long for the bar to report On.
 
 Logs can contain SSIDs, addresses, host keys and device information. Review before sharing. Password hashes and derived Wi-Fi keys are never included in the toolkit's routine `logs/` export. Keep full private packages and captures out of issues.
 
