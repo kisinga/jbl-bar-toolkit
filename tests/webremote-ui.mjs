@@ -971,6 +971,8 @@ try {
   await page.locator('#message-input').fill('Bonne nuit');
   check(!(await page.locator('#message-send').isDisabled()),'messages can be sent with the bar in standby');
   state.power='On';
+  await page.setViewportSize({width:1280,height:900});
+  check(await page.evaluate(()=>{const a=document.querySelector('#timer-panel').getBoundingClientRect(),b=document.querySelector('#messages-panel').getBoundingClientRect();return Math.abs(a.top-b.top)<2 && b.left>a.right;}),'on a wide screen, Timers and Messages sit side by side');
   await page.setViewportSize({width:320,height:900});
   check(await page.locator('#messages-panel').evaluate(panel=>{const box=panel.getBoundingClientRect();return [...panel.querySelectorAll('input,button,.message-item')].filter(e=>e.getBoundingClientRect().height>0).every(e=>{const r=e.getBoundingClientRect();return r.left>=box.left-1 && r.right<=box.right+1;});}),'message controls stay inside the panel at 320 px');
   check(await page.locator('#messages-panel button').evaluateAll(buttons=>buttons.filter(b=>b.getBoundingClientRect().height>0).every(b=>b.getBoundingClientRect().height>=44)),'message buttons have 44 px targets');

@@ -348,3 +348,7 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .message-preview.timer-error{color:var(--danger)}
 #message-state{color:var(--muted);font-size:var(--font-small)}
 #message-state:empty,#message-explain:empty{display:none}
+/* Timers and Messages side by side on wide screens; one alone takes the width. */
+.display-panels{display:grid;gap:15px;margin-top:15px;align-items:start}
+.display-panels>.panel{margin-top:0}
+@media(min-width:900px){.display-panels{grid-template-columns:repeat(auto-fit,minmax(380px,1fr))}.timer-body,.messages-body{max-width:none}}
