@@ -78,6 +78,9 @@ type wakeTracker struct {
 	settledCount int
 	// manual: the owner chose the mode before the automation acted.
 	manual bool
+	// timer: a timer's chime woke the bar, which goes back to standby after
+	// it; no mode is applied or remembered for this wake.
+	timer bool
 	// requested: a mode the owner selected from the page or Home Assistant
 	// (0 Standard, 3 Smart) and that settle has not reported yet.
 	requested       bool
@@ -104,6 +107,9 @@ func (w *wakeTracker) observeFor(s wakeSample, keepSmart bool) (string, bool) {
 		}
 	}
 	if w.handled {
+		if w.timer {
+			return "TIMER_WAKE", false
+		}
 		if w.manual {
 			return "MANUAL_MODE_THIS_WAKE", false
 		}
@@ -164,7 +170,7 @@ const (
 // never taken for the owner's choice; a failed wake records nothing, and a
 // standby before the window ends discards the change.
 func (w *wakeTracker) settle(s wakeSample) (uint32, bool) {
-	if !w.handled || w.failed || s.identity == "" || s.identity != w.last.identity || s.power != 1 || s.system != 0 || !s.idle || (s.mode != 0 && s.mode != 3) {
+	if !w.handled || w.timer || w.failed || s.identity == "" || s.identity != w.last.identity || s.power != 1 || s.system != 0 || !s.idle || (s.mode != 0 && s.mode != 3) {
 		w.settledCount = 0
 		return 0, false
 	}
@@ -497,6 +503,10 @@ func (r *remote) monitorAutoStandard(ctx context.Context) {
 			tracker.chosen(d.manualMode)
 		}
 		status, apply := tracker.observeFor(sample, remembered == "Smart")
+		if r.timerWake.Load() && sample.power == 1 && !tracker.handled && !tracker.failed {
+			tracker.handled, tracker.timer = true, true
+			status, apply = "TIMER_WAKE", false
+		}
 		if r.cfg.SmartModeMemory {
 			if mode, kept := tracker.settle(sample); kept && modeName(mode) != remembered {
 				if e := saveSmartMemory(smartMemoryPath, modeName(mode)); e != nil {

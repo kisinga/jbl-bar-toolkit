@@ -71,6 +71,12 @@ func (r *remote) playTimerSound(ctx context.Context, o timerSoundOptions) {
 		return
 	}
 	report("Playing the timer sound")
+	if before.Power == "Standby" {
+		// Only for the chime: the bar goes back to standby after it, so the
+		// wake automation (Standard or the remembered mode) stays out of it.
+		r.timerWake.Store(true)
+		defer r.timerWake.Store(false)
+	}
 	// The display and its key watch keep running meanwhile (display_native.go).
 	r.displayThroughGate.Store(true)
 	var free sync.Once
@@ -95,10 +101,7 @@ func (r *remote) playTimerSound(ctx context.Context, o timerSoundOptions) {
 	if err != nil && ctx.Err() == nil {
 		displayLog("Timer sound: %v", err)
 	}
-	// Put things back even when the timer was stopped (ctx ended), under the
-	// gate again: volume and mute, then the source or standby.
-	restore, cancel := context.WithTimeout(context.Background(), timerSoundRestore)
-	defer cancel()
+	// Put things back even when the timer was stopped (ctx ended).
 	action := restoreAction(before.Input)
 	if before.Power == "Standby" {
 		action = "power"
@@ -108,28 +111,93 @@ func (r *remote) playTimerSound(ctx context.Context, o timerSoundOptions) {
 	if volume == (volumeChange{}) && action == "" {
 		return
 	}
-	release, report, ok = r.holdFor(restore, "Timer sound", timerSoundRestore)
-	if !ok {
-		displayLog("Timer sound: the bar was busy; it was not put back (volume, source)")
-		return
+	restore, cancel := context.WithTimeout(context.Background(), timerSoundRestore)
+	defer cancel()
+	ops := barRestoreOps{
+		hold: func(ctx context.Context) (func(), func(string), bool) {
+			return r.holdFor(ctx, "Timer sound", time.Until(deadlineOf(ctx)))
+		},
+		volume:   func(ctx context.Context) { r.barVolume().restore(ctx, volume) },
+		snapshot: r.device.snapshot,
+		action:   func(ctx context.Context, a string) error { _, e := r.device.action(ctx, a); return e },
+		sleep:    func(ctx context.Context, d time.Duration) { sleepCtx(ctx, d) },
 	}
-	defer release()
-	report("Putting the bar back after the timer sound")
-	r.barVolume().restore(restore, volume)
-	now := r.device.snapshot()
-	switch {
-	case action == "power" && now.Power == "On":
-		report("Returning to standby after the timer sound")
-		_, err = r.device.action(restore, "power")
-	case action != "" && action != "power" && now.Power == "On" && now.Input != before.Input:
-		report("Returning to " + before.Input + " after the timer sound")
-		_, err = r.device.action(restore, action)
-	default:
-		err = nil
+	if !ops.restore(restore, action, before.Input) {
+		displayLog("Timer sound: the bar could not be put back (%s); it stays as it is", action)
 	}
-	if err != nil {
-		displayLog("Timer sound: could not put the bar back (%s): %v", action, err)
+}
+
+func deadlineOf(ctx context.Context) time.Time {
+	if d, ok := ctx.Deadline(); ok {
+		return d
 	}
+	return time.Now().Add(timerSoundRestore)
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
+}
+
+// barRestoreOps puts the bar back after the timer sound; tests replace its ends.
+type barRestoreOps struct {
+	hold     func(context.Context) (release func(), report func(string), ok bool)
+	volume   func(context.Context)
+	snapshot func() state
+	action   func(context.Context, string) error
+	sleep    func(context.Context, time.Duration)
+}
+
+// timerRestoreSettle: after a key the bar needs a few seconds to report its
+// new power or source; power toggles, so it is never pressed again sooner.
+const timerRestoreSettle = 6 * time.Second
+
+// restore puts the volume back, then standby (action "power") or the source,
+// under the gate each time. The bar woken by the chime is still waking up:
+// a key can be refused (the wake automation, "busy"), or not taken; so it
+// checks the result and tries again until ctx ends. It reports success.
+func (o barRestoreOps) restore(ctx context.Context, action, input string) bool {
+	volumeDone := false
+	for ctx.Err() == nil {
+		release, report, ok := o.hold(ctx)
+		if !ok {
+			return false
+		}
+		if !volumeDone {
+			report("Putting the bar back after the timer sound")
+			o.volume(ctx)
+			volumeDone = true
+		}
+		now := o.snapshot()
+		var key string
+		// Only from the chime's own state: a source the owner picked during
+		// the chime (to watch TV, say) is theirs, and the bar stays on it.
+		ours := now.Input == "Chromecast" || now.Input == input
+		switch {
+		case !ours:
+		case action == "power" && now.Power == "On":
+			report("Returning to standby after the timer sound")
+			key = "power"
+		case action != "" && action != "power" && now.Power == "On" && now.Input != input:
+			report("Returning to " + input + " after the timer sound")
+			key = action
+		}
+		if key == "" {
+			release()
+			return true // back as it was (or the bar went off meanwhile)
+		}
+		err := o.action(ctx, key)
+		release()
+		if err != nil {
+			displayLog("Timer sound: putting the bar back (%s): %v; trying again", key, err)
+			o.sleep(ctx, time.Second)
+			continue
+		}
+		o.sleep(ctx, timerRestoreSettle) // then check, and press again only if needed
+	}
+	return false
 }
 
 // holdFor takes the action gate, waiting up to limit while another control
