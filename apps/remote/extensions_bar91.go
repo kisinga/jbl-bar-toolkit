@@ -96,7 +96,11 @@ func (r *remote) registerBar91Extensions() error {
 			if err := extensionParameters(data, &parameters); err != nil {
 				return state{}, err
 			}
-			return r.device.centerAction(ctx, "center_next")
+			s, err := r.device.centerAction(ctx, "center_next")
+			if err == nil && s.Sound != nil && s.Sound.Center != nil {
+				showCenterLevel(r.display, *s.Sound.Center)
+			}
+			return s, err
 		}},
 		Project: func(s state) any {
 			if s.Sound == nil || s.Sound.Center == nil {
