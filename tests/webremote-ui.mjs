@@ -946,10 +946,10 @@ try {
   await page.locator('#message-id').fill('Mauvais nom');
   check(await page.locator('#message-send').isDisabled() && /^Name: lower-case/.test(await page.locator('#message-state').textContent()),'an invalid name is refused');
   await page.locator('#message-id').fill('');
-  check(await page.locator('#message-clear-unnamed').isVisible(),'with several messages, the unnamed one can be cleared on its own');
-  await page.locator('#message-clear-unnamed').click();
+  check((await page.locator('#message-clear-unnamed').count())===0,'no separate Clear the unnamed message: its line has ×');
+  await page.locator('.message-item').filter({hasText:'Unnamed'}).locator('.timer-cancel').click();
   await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===1);
-  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.cancel',parameters:{id:'default'}}),'Clear the unnamed message cancels id default');
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.cancel',parameters:{id:'default'}}),'the unnamed message\'s × cancels id default');
   check((await page.locator('.timer-recent-item').filter({hasText:'FRIGO'}).count())===1 && (await page.locator('#message-recent .timer-recent-item').allTextContents()).join('|')==='COLIS LIVRE · for 15 min|FRIGO OUVERT · once','recent messages, the last first');
   await page.locator('#message-recent .timer-recent-item').nth(1).click();
   await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===2);

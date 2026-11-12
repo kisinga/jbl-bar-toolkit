@@ -4,7 +4,6 @@ import {byId} from './dom.js';
 // send again; and a form to leave one (text, optional name, how long).
 const RECENT_KEY = 'jbl-message-recent';
 const RECENT_MAX = 4;
-const UNNAMED = 'default';
 // Like the remote (display_message.go): upper case, accents folded, letters,
 // digits, space and - . ' only, 31 at most.
 const fold = text => text.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/œ/gi, 'OE').replace(/æ/gi, 'AE').replace(/ß/g, 'SS').replace(/[’‘]/g, "'").replace(/[–—]/g, '-').toUpperCase().trim().split(/\s+/).join(' ');
@@ -89,9 +88,6 @@ export function createMessages(root, {request}) {
       item.append(el('span', 'message-dot'), words, cancel);
       return item;
     }));
-    const unnamed = items.some(m => !m.named);
-    $('message-clear-unnamed').hidden = !unnamed || items.length === 1;
-    $('message-clear-unnamed').disabled = busy();
     const all = $('message-clear-all');
     all.disabled = busy();
     all.textContent = confirmAll ? 'Tap again to clear ' + (items.length === 1 ? 'it' : 'all ' + items.length) : items.length === 1 ? 'Clear it' : 'Clear all messages';
@@ -167,7 +163,6 @@ export function createMessages(root, {request}) {
   radios(modeGroup, 'data-mode', b => { o.mode = b.dataset.mode; });
   radios(durationGroup, 'data-duration', b => { o.duration = Number(b.dataset.duration); });
   send.addEventListener('click', () => { const d = draft(); if (!send.disabled && d.parameters) send_('display_message', d.parameters); });
-  $('message-clear-unnamed').addEventListener('click', () => { if (!busy()) send_('display_cancel', {id: UNNAMED}); });
   // Clear all asks for a second tap, rather than a dialog.
   $('message-clear-all').addEventListener('click', () => {
     if (busy()) return;

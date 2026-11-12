@@ -25,7 +25,6 @@ The **Messages** panel works with the bar on or in standby:
 - **On the bar** lists the messages in course:
   - the one showing first, with a lit dot, then the others in line;
   - each with its text as the bar shows it, its name (or *Unnamed*), what is left (`3 times left`, `14:52 left`, `until cleared`) and ×;
-  - **Clear the unnamed message**, shown when there are several messages;
   - **Clear all messages**, which asks for a second tap. Timers are not affected.
 - **Send again** repeats one of the last four messages sent from this device, with its name and how long.
 - **Leave a message**:
