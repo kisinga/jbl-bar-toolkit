@@ -33,7 +33,7 @@ The **Messages** panel works with the bar on or in standby:
   - **Clear it with a key on the JBL remote**, on by default: whoever reads the message presses any key, and it goes away, as a sign it was seen;
   - **How long**, folded, with its choice in the summary: a number of times (1 to 99), for a while (1, 5 or 15 minutes, or 1 hour), or until cleared (the default, since a message left for someone stays until it is seen);
   - under **Show on the bar**, a line says how long it shows and which message it replaces, if any.
-- **Clock in standby**, a switch: see below.
+- **Clock**: Off, In standby or Always; see below.
 
 ## API
 
@@ -68,22 +68,22 @@ The renderer keeps the text while `(tick − start) × ms_per_tick < length × 5
 
 **Limits.** Writes are restricted to these four fields (`display_native.go`). Each step takes the shared action gate, unreported, like the other monitors. When a control holds the gate, the step waits for the next poll. Handing the display back retries for 5 s and then writes without the gate, so a message never outlives its request.
 
-## Clock in standby
+## Clock
 
-With **Clock in standby** on, the display shows the time while the bar is in standby, as `18 54` (the display has no colon; a space rather than a letter, so that no segment stays lit all the time). It is below everything else:
-- it never shows with the bar on: the bar's own screen (the source) stays;
+**Clock** (Off, In standby, Always) shows the time on the display, as `18 54` (the display has no colon; a space rather than a letter, so that no segment stays lit all the time). *In standby* shows it only while the bar is in standby; *Always* also with the bar on, in place of the bar's idle screen (the source's name). It is below everything else:
 - it takes the display only when no message or timer of ours shows or waits, and the display has been free for a second, like a message;
-- it steps back at once for a new message or timer (it is not one of the messages that take turns), and for anything the bar shows (volume, `HELLO` at wake-up, `STDBY`); it comes back once the display is free again.
+- it steps back at once for a new message or timer (it is not one of the messages that take turns), and for anything the bar shows (volume, `HELLO` at wake-up, `STDBY`); it comes back once the display is free again;
+- *In standby* never covers the bar's idle screen with the bar on.
 
 To show it only at some hours, turn it on and off from Home Assistant (`switch.jbl_display_clock`) on a schedule.
 
-The page sends the browser's time zone (an IANA name such as `Europe/Paris`) with the switch; the bar's system clock is UTC, and the remote carries the time zone database. The setting is kept in `/var/JBLRemote/display-clock.json`, so the clock comes back after a restart.
+The page sends the browser's time zone (an IANA name such as `Europe/Paris`); the bar's system clock is UTC, and the remote carries the time zone database. The setting is kept in `/var/JBLRemote/display-clock.json`, so the clock comes back after a restart.
 
 ```json
-{"action":"bar91.display-clock.set","parameters":{"enabled":true,"tz":"Europe/Paris"}}
+{"action":"bar91.display-clock.set","parameters":{"enabled":true,"when":"always","tz":"Europe/Paris"}}
 ```
 
-`tz` is optional (the saved one is kept; UTC by default); an unknown time zone is refused. The short alias is `display_clock`. The state reports `extensions["bar91.display-clock"]` = `{"enabled": true, "tz": "Europe/Paris"}`. It uses the same four fields as the messages and hands the standby screen back the same way. `display_clock_test.go` covers standby only, giving way to a message (whose passes are never interleaved with the clock) and to the bar's screens, the wake-up, and the saved setting with its time zone.
+Each parameter is optional, but `enabled` or `when` must be there; the others keep their value. `when` is `standby` (the default) or `always`; `tz` an IANA time zone (UTC by default). The short alias is `display_clock`. The state reports `extensions["bar91.display-clock"]` = `{"enabled": true, "when": "always", "tz": "Europe/Paris"}`. It uses the same four fields as the messages and hands the standby screen back the same way. `display_clock_test.go` covers standby only, the bar on with *Always* (the volume, a message, back to *In standby*, the bar going to standby), giving way to a message (whose passes are never interleaved with the clock) and to the bar's screens, the wake-up, and the saved setting with its time zone.
 
 ## Tests
 

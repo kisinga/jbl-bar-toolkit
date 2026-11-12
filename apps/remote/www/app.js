@@ -213,7 +213,7 @@ function success(action, s) {
   if (action === 'timer_extend') return 'Time added.';
   if (action === 'display_message') return 'Message sent to the bar.';
   if (action === 'display_cancel') return 'Message cleared.';
-  if (action === 'display_clock') return s.extensions?.['bar91.display-clock']?.enabled ? 'Clock on: it shows in standby.' : 'Clock off.';
+  if (action === 'display_clock') { const c = s.extensions?.['bar91.display-clock']; return !c?.enabled ? 'Clock off.' : c.when === 'always' ? 'Clock on, in standby and with the bar on.' : 'Clock on, in standby.'; }
   if (action === 'center_next') return 'Center level ' + s.sound.center + ' selected.';
   if (action === 'atmos_next') return 'Atmos height: ' + ['Low','Mid','High'][s.sound.atmos] + '.';
   if (action === 'rear_next') return 'Rear speakers: ' + ['Low','Mid','High','Muted'][s.sound.rear] + '.';

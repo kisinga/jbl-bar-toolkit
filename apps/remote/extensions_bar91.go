@@ -171,21 +171,21 @@ func (r *remote) registerDisplayMessage() error {
 	})
 }
 
-// registerDisplayClock adds the standby clock on the front display
-// (display_clock.go), below every message and timer.
+// registerDisplayClock adds the clock on the front display (display_clock.go),
+// below every message, timer and screen of the bar's own.
 func (r *remote) registerDisplayClock() error {
 	r.clock = newDisplayClock(r.display, r.displayPort, clockPath, displayLog)
 	return r.extensions.Register(extension.Module[state]{
-		Descriptor: extension.Descriptor{ID: "bar91.display-clock", Component: "display-clock", Name: "Standby clock", Model: "bar91", Included: true, Experimental: true},
+		Descriptor: extension.Descriptor{ID: "bar91.display-clock", Component: "display-clock", Name: "Display clock", Model: "bar91", Included: true, Experimental: true},
 		Project:    func(state) any { return r.clock.State() },
 		Actions: map[string]extension.Handler[state]{
 			"bar91.display-clock.set": func(ctx context.Context, data json.RawMessage) (state, error) {
-				enabled, tz, err := parseClockSet(data)
+				change, err := parseClockSet(data)
 				if err == nil && r.device == nil {
 					err = errors.New("native display unavailable")
 				}
 				if err == nil {
-					err = r.clock.Set(enabled, tz)
+					err = r.clock.Set(change)
 				}
 				return r.backend.snapshot(), err
 			},

@@ -31,7 +31,7 @@ export function createMessages(root, {request}) {
   if (!Array.isArray(recent)) recent = [];
   recent = recent.filter(r => r && validText(r.text ?? '') && (r.id === '' || validId(r.id ?? ''))).slice(0, RECENT_MAX);
   const outbox = {display_message: [], display_cancel: [], display_clock: []};
-  const clockSwitch = $('message-clock');
+  const clockButtons = [...document.querySelectorAll('#message-clock button')];
   const messages = () => latest?.state?.messages || [];
   const busy = () => !latest?.ready || !!latest?.active;
 
@@ -146,11 +146,19 @@ export function createMessages(root, {request}) {
     renderClock();
   }
   // The standby clock (bar91.display-clock): the switch follows the bar unless a change is on its way.
+  // Off, in standby only, or always (also with the bar on).
+  let clockTarget = null;
   function renderClock() {
     const c = latest?.state?.display_clock;
     if (!c) return;
-    if (!outbox.display_clock.length && latest.active !== 'display_clock') clockSwitch.checked = !!c.enabled;
-    clockSwitch.disabled = busy();
+    if (!outbox.display_clock.length && latest.active !== 'display_clock') clockTarget = null;
+    const mode = clockTarget ?? (c.enabled ? (c.when === 'always' ? 'always' : 'standby') : 'off');
+    for (const b of clockButtons) {
+      const on = b.dataset.clock === mode;
+      b.classList.toggle('selected', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.disabled = busy();
+    }
   }
   const refresh = () => { if (latest) render(latest); };
   text.addEventListener('input', refresh);
@@ -171,11 +179,16 @@ export function createMessages(root, {request}) {
   }
   radios(modeGroup, 'data-mode', b => { o.mode = b.dataset.mode; });
   radios(durationGroup, 'data-duration', b => { o.duration = Number(b.dataset.duration); });
-  clockSwitch.addEventListener('change', () => {
-    if (busy()) { clockSwitch.checked = !clockSwitch.checked; return; }
+  for (const b of clockButtons) b.addEventListener('click', () => {
+    if (busy()) return;
+    const mode = b.dataset.clock;
     let tz = '';
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { tz = ''; }
-    send_('display_clock', tz ? {enabled: clockSwitch.checked, tz} : {enabled: clockSwitch.checked});
+    const parameters = mode === 'off' ? {enabled: false} : {enabled: true, when: mode};
+    if (tz && mode !== 'off') parameters.tz = tz;
+    clockTarget = mode;
+    send_('display_clock', parameters);
+    renderClock();
   });
   send.addEventListener('click', () => { const d = draft(); if (!send.disabled && d.parameters) send_('display_message', d.parameters); });
   // Clear all asks for a second tap, rather than a dialog.

@@ -12,33 +12,50 @@ import (
 	_ "time/tzdata" // the bar has no zoneinfo: the time zone comes with the remote
 )
 
-// Clock on the front display, in standby.
+// Clock on the front display.
 //
 // When the owner turns it on, the display shows the time (18 54: the display
 // has no colon; a space, so that no segment stays lit all the time and wears
-// faster than the others) while the bar is in standby and nothing else wants
-// the screen.
+// faster than the others) when nothing else wants the screen: in standby only
+// (when "standby", the default), or in standby and with the bar on ("always"),
+// where it takes the place of the bar's idle screen (the source's name).
 // It is the lowest priority there is:
 //   - it only takes the display when no message or timer of ours is showing or
 //     waiting (it is not one of the messages that take turns), and the display
 //     has been free for a second, like a message;
 //   - it steps back as soon as a message or a timer arrives, or the bar shows
-//     anything of its own (a level-2 message, HELLO at wake-up, STDBY);
-//   - with the bar on it never shows: the bar's own screen (the source) stays.
+//     anything of its own (a level-2 message such as the volume, HELLO at
+//     wake-up, STDBY);
+//   - with the bar on and when "standby", it never shows: the bar's idle
+//     screen stays.
 //
 // It uses the same four native fields as the messages (display_message.go) and
-// gives the standby screen back the same way. The setting (on/off and the time
-// zone, an IANA name such as Europe/Paris sent by the page or Home Assistant)
-// is kept in clockPath, so it survives a restart.
+// gives the standby screen back the same way. The setting (on/off, when, and
+// the time zone, an IANA name such as Europe/Paris sent by the page or Home
+// Assistant) is kept in clockPath, so it survives a restart.
 
 const (
 	clockPath   = "/var/JBLRemote/display-clock.json"
 	clockFormat = "15 04"
 )
 
+// Where the clock shows when on.
+const (
+	clockStandby = "standby" // only while the bar is in standby
+	clockAlways  = "always"  // in standby and with the bar on
+)
+
 type clockSettings struct {
 	Enabled bool   `json:"enabled"`
+	When    string `json:"when,omitempty"` // clockStandby (also when empty) or clockAlways
 	TZ      string `json:"tz"`
+}
+
+// clockSet is a change: nil fields keep the current value.
+type clockSet struct {
+	Enabled *bool   `json:"enabled"`
+	When    *string `json:"when"`
+	TZ      *string `json:"tz"`
 }
 
 type displayClock struct {
@@ -86,32 +103,37 @@ func clockLocation(tz string) (*time.Location, error) {
 	return loc, nil
 }
 
-func parseClockSet(data json.RawMessage) (enabled bool, tz *string, err error) {
-	var p struct {
-		Enabled *bool   `json:"enabled"`
-		TZ      *string `json:"tz"`
+func parseClockSet(data json.RawMessage) (clockSet, error) {
+	var p clockSet
+	if err := extensionParameters(data, &p); err != nil {
+		return p, err
 	}
-	if err = extensionParameters(data, &p); err != nil {
-		return false, nil, err
+	if p.Enabled == nil && p.When == nil {
+		return p, errors.New("enabled (true or false) or when (standby or always)")
 	}
-	if p.Enabled == nil {
-		return false, nil, errors.New("enabled: true or false")
+	if p.When != nil && *p.When != clockStandby && *p.When != clockAlways {
+		return p, errors.New("when: standby or always")
 	}
 	if p.TZ != nil {
-		if _, err = clockLocation(*p.TZ); err != nil {
-			return false, nil, err
+		if _, err := clockLocation(*p.TZ); err != nil {
+			return p, err
 		}
 	}
-	return *p.Enabled, p.TZ, nil
+	return p, nil
 }
 
-// Set turns the clock on or off; tz, when given, replaces the time zone.
-func (c *displayClock) Set(enabled bool, tz *string) error {
+// Set changes the clock: on or off, where it shows, the time zone.
+func (c *displayClock) Set(p clockSet) error {
 	c.mu.Lock()
 	s := c.settings
-	s.Enabled = enabled
-	if tz != nil {
-		s.TZ = *tz
+	if p.Enabled != nil {
+		s.Enabled = *p.Enabled
+	}
+	if p.When != nil {
+		s.When = *p.When
+	}
+	if p.TZ != nil {
+		s.TZ = *p.TZ
 	}
 	loc, err := clockLocation(s.TZ)
 	if err != nil {
@@ -146,13 +168,17 @@ func (c *displayClock) Set(enabled bool, tz *string) error {
 func (c *displayClock) State() map[string]any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return map[string]any{"enabled": c.settings.Enabled, "tz": c.settings.TZ}
+	when := c.settings.When
+	if when == "" {
+		when = clockStandby
+	}
+	return map[string]any{"enabled": c.settings.Enabled, "when": when, "tz": c.settings.TZ}
 }
 
-func (c *displayClock) now() (bool, string) {
+func (c *displayClock) now() (enabled, always bool, text string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.settings.Enabled, c.port.now().In(c.loc).Format(clockFormat)
+	return c.settings.Enabled, c.settings.When == clockAlways, c.port.now().In(c.loc).Format(clockFormat)
 }
 
 // Run keeps the clock on screen when it may be, until ctx ends.
@@ -174,7 +200,7 @@ func (c *displayClock) Run(ctx context.Context) {
 var clockPollDivisor time.Duration = 1
 
 func (c *displayClock) tick() {
-	enabled, text := c.now()
+	enabled, always, text := c.now()
 	holding := c.hold.own || c.hold.stby
 	if !enabled || !c.m.idle() {
 		// Off, or a message or timer of ours wants the screen: give it back now.
@@ -197,8 +223,8 @@ func (c *displayClock) tick() {
 		if holding {
 			switch {
 			case sel == vfdMessageCustom && l3 != vfdLevel3None:
-				// HELLO at wake-up, a source…: the bar's level-3 screen is
-				// shown; the standby screen is the bar's again.
+				// HELLO at wake-up, STDBY…: the bar's level-3 screen is shown;
+				// the standby screen is the bar's again.
 				c.hold.own, c.hold.stby, c.free, c.shown = false, false, 0, ""
 				return mem.write32(vfdLevel2, vfdMessageNone)
 			case sel != vfdMessageCustom:
@@ -208,6 +234,11 @@ func (c *displayClock) tick() {
 				}
 				c.hold.own, c.hold.stby, c.free, c.shown = false, false, 0, ""
 				return e
+			}
+			if !c.hold.stby && !always {
+				// Shown with the bar on, now "standby" only: the idle screen is the bar's.
+				c.hold.own, c.free, c.shown = false, 0, ""
+				return mem.write32(vfdLevel2, vfdMessageNone)
 			}
 			if text != c.shown {
 				if e = mem.writeText(text); e != nil {
@@ -221,13 +252,15 @@ func (c *displayClock) tick() {
 			}
 			return mem.write32(vfdTempTick, t)
 		}
-		// Not shown: only in standby (the blank screen), once the display has
-		// been free for displayFreeFor polls.
+		// Not shown: in standby (the blank screen), or with the bar on (its
+		// idle screen) when "always", once the display has been free for
+		// displayFreeFor polls.
 		ok, e := displayFree(mem)
 		if e != nil {
 			return e
 		}
-		if !ok || l3 != vfdLevel3StandbyBlank {
+		standby := l3 == vfdLevel3StandbyBlank
+		if !ok || !(standby || always && l3 == vfdLevel3None) {
 			c.free = 0
 			return nil
 		}
@@ -254,11 +287,14 @@ func (c *displayClock) tick() {
 		if e = mem.write32(vfdLevel2, vfdMessageCustom); e != nil {
 			return e
 		}
-		c.hold.own = true
+		c.hold.own, c.shown = true, text
+		if !standby {
+			return nil // the bar is on: its idle screen gives way to level 2
+		}
 		if e = mem.write32(vfdLevel3, vfdLevel3None); e != nil {
 			return e
 		}
-		c.hold.stby, c.shown = true, text
+		c.hold.stby = true
 		return nil
 	})
 	if err != nil && err != errDisplayGate {
