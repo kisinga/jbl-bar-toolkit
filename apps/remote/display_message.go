@@ -421,6 +421,20 @@ func (m *displayManager) yield(job *displayJob) {
 	m.mu.Unlock()
 }
 
+// idle reports whether no message or timer of ours shows or waits (the clock's turn).
+func (m *displayManager) idle() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.owner == nil && len(m.queue) == 0 && len(m.jobs) == 0
+}
+
+// changedChan is closed at the next change of the messages (a new one, an end).
+func (m *displayManager) changedChan() <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.changed
+}
+
 func (m *displayManager) waiting() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

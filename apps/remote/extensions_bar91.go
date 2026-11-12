@@ -17,7 +17,8 @@ var bar91ActionAliases = map[string]string{
 	"eq_apply": "bar91.front-eq.apply", "eq_reset": "bar91.front-eq.reset",
 	"center_next":     "bar91.center-level.next",
 	"display_message": "bar91.display-message.show", "display_cancel": "bar91.display-message.cancel",
-	"timer_start": "bar91.timer.start", "timer_cancel": "bar91.timer.cancel", "timer_extend": "bar91.timer.extend",
+	"display_clock": "bar91.display-clock.set",
+	"timer_start":   "bar91.timer.start", "timer_cancel": "bar91.timer.cancel", "timer_extend": "bar91.timer.extend",
 }
 
 // Model composition is explicit. A future family backend registers only the
@@ -31,6 +32,9 @@ func (r *remote) registerBar91Extensions() error {
 		return err
 	}
 	if err := r.registerTimers(); err != nil {
+		return err
+	}
+	if err := r.registerDisplayClock(); err != nil {
 		return err
 	}
 	eq := func(action string) extension.Handler[state] {
@@ -164,6 +168,29 @@ func (r *remote) registerDisplayMessage() error {
 			},
 		},
 		Run: r.display.Run,
+	})
+}
+
+// registerDisplayClock adds the standby clock on the front display
+// (display_clock.go), below every message and timer.
+func (r *remote) registerDisplayClock() error {
+	r.clock = newDisplayClock(r.display, r.displayPort, clockPath, displayLog)
+	return r.extensions.Register(extension.Module[state]{
+		Descriptor: extension.Descriptor{ID: "bar91.display-clock", Component: "display-clock", Name: "Standby clock", Model: "bar91", Included: true, Experimental: true},
+		Project:    func(state) any { return r.clock.State() },
+		Actions: map[string]extension.Handler[state]{
+			"bar91.display-clock.set": func(ctx context.Context, data json.RawMessage) (state, error) {
+				enabled, tz, err := parseClockSet(data)
+				if err == nil && r.device == nil {
+					err = errors.New("native display unavailable")
+				}
+				if err == nil {
+					err = r.clock.Set(enabled, tz)
+				}
+				return r.backend.snapshot(), err
+			},
+		},
+		Run: r.clock.Run,
 	})
 }
 

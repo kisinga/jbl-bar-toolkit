@@ -213,6 +213,7 @@ function success(action, s) {
   if (action === 'timer_extend') return 'Time added.';
   if (action === 'display_message') return 'Message sent to the bar.';
   if (action === 'display_cancel') return 'Message cleared.';
+  if (action === 'display_clock') return s.extensions?.['bar91.display-clock']?.enabled ? 'Clock on: it shows in standby.' : 'Clock off.';
   if (action === 'center_next') return 'Center level ' + s.sound.center + ' selected.';
   if (action === 'atmos_next') return 'Atmos height: ' + ['Low','Mid','High'][s.sound.atmos] + '.';
   if (action === 'rear_next') return 'Rear speakers: ' + ['Low','Mid','High','Muted'][s.sound.rear] + '.';
@@ -232,6 +233,7 @@ function pendingMessage() {
   if (active === 'timer_extend') return 'Adding time…';
   if (active === 'display_message') return 'Sending the message…';
   if (active === 'display_cancel') return 'Clearing…';
+  if (active === 'display_clock') return 'Setting the clock…';
   if (active === 'eq_reset') return 'Restoring original tuning…';
 	if (active === 'night_toggle') return 'Changing night mode… audio may briefly mute.';
 	if (active?.startsWith('media_')) return 'Sending playback control…';

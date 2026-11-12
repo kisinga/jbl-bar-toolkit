@@ -76,6 +76,7 @@ const server = createServer(async (req, res) => {
       if (action === 'bar91.timer.start') { const timers=state.extensions['bar91.timer'].timers; timerIds++; timers.push({id:'t'+timerIds,text:payload.parameters.text??'',countdown:payload.parameters.countdown,sound:payload.parameters.sound??'off',remaining_ms:payload.parameters.duration_s*1000,duration_ms:payload.parameters.duration_s*1000,ringing:false}); }
       if (action === 'bar91.timer.extend') { const t=state.extensions['bar91.timer'].timers.find(t=>t.id===payload.parameters.id); t.remaining_ms+=payload.parameters.add_s*1000; t.duration_ms+=payload.parameters.add_s*1000; }
       if (action === 'bar91.display-message.show') { const box=state.extensions['bar91.display-message']; const p=payload.parameters; const id=p.id??'default'; const fold=p.text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); const m={id,named:id!=='default',text:fold,mode:p.forever?'forever':p.duration_s?'duration':'passes',showing:box.messages.length===0,stop_on_key:!!p.stop_on_key}; if(p.repeat) m.passes_left=p.repeat; if(!p.forever&&!p.duration_s&&!p.repeat) m.passes_left=1; if(p.duration_s) m.remaining_ms=p.duration_s*1000; const i=box.messages.findIndex(x=>x.id===id); if(i>=0){m.showing=box.messages[i].showing;box.messages[i]=m;} else box.messages.push(m); }
+      if (action === 'bar91.display-clock.set') { const p=payload.parameters; state.extensions['bar91.display-clock']={enabled:p.enabled,tz:p.tz??state.extensions['bar91.display-clock']?.tz??''}; }
       if (action === 'bar91.display-message.cancel') { const box=state.extensions['bar91.display-message']; const id=payload.parameters?.id; box.messages=id?box.messages.filter(m=>m.id!==id):[]; if(box.messages[0]) box.messages[0].showing=true; }
       if (action === 'bar91.timer.cancel') { const box=state.extensions['bar91.timer']; box.timers=box.timers.filter(t=>t.id!==payload.parameters.id); }
       if (action === 'calibrate') state.setup={...state.setup,calibration:'Step 1 starting'};
@@ -970,6 +971,25 @@ try {
   await page.waitForFunction(()=>document.querySelector('#power-label').textContent==='Turn on');
   await page.locator('#message-input').fill('Bonne nuit');
   check(!(await page.locator('#message-send').isDisabled()),'messages can be sent with the bar in standby');
+  // The standby clock (extension bar91.display-clock), in the Messages panel.
+  check(await page.locator('#message-clock-section').isHidden(),'no clock switch when the remote has no standby clock');
+  screenshotFeatures={...screenshotFeatures,extensions:[...screenshotFeatures.extensions,{id:'bar91.display-clock',component:'display-clock',included:true,actions:['bar91.display-clock.set']}]};
+  state.extensions={...state.extensions,'bar91.display-clock':{enabled:false,tz:''}};
+  await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#message-clock-section').hidden);
+  check(!(await page.locator('#message-clock').isChecked()),'the clock switch follows the bar: off');
+  const zone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
+  await page.locator('#message-clock').check();
+  await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('Clock on'));
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-clock.set',parameters:{enabled:true,tz:zone}}) && await page.locator('#message-clock').isChecked(),'turning the clock on sends the browser\'s time zone');
+  state.extensions['bar91.display-clock'].enabled=false;  // turned off elsewhere (Home Assistant)
+  await page.waitForFunction(()=>!document.querySelector('#message-clock').checked);
+  check(true,'the switch follows a change made elsewhere');
+  await page.locator('#message-clock').check();
+  await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('Clock on'));
+  await page.locator('#message-clock').uncheck();
+  await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('Clock off'));
+  check(lastPayload.parameters.enabled===false,'turning it off sends enabled false');
   state.power='On';
   await page.setViewportSize({width:1280,height:900});
   check(await page.evaluate(()=>{const a=document.querySelector('#timer-panel').getBoundingClientRect(),b=document.querySelector('#messages-panel').getBoundingClientRect();return Math.abs(a.top-b.top)<2 && b.left>a.right;}),'on a wide screen, Timers and Messages sit side by side');

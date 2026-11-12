@@ -122,6 +122,7 @@ type remote struct {
 	display       *displayManager
 	displayPort   displayPort
 	timers        *timerManager
+	clock         *displayClock
 }
 
 // This native seam preserves existing Bar 9.1 fixtures. The reusable public

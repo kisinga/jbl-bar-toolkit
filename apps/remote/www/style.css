@@ -339,6 +339,7 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .message-recent h3{color:#ffd1bc}
 .message-recent-list{display:flex;flex-wrap:wrap;gap:8px}
 .message-new{display:grid;gap:14px}
+.message-clock{border-top:1px solid var(--line);padding-top:14px}
 .message-new h3{margin-bottom:-4px}
 .message-field{font-size:var(--font-small);color:var(--muted);margin-bottom:-8px}
 .message-field span{color:var(--subtle)}

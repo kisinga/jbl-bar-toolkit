@@ -201,6 +201,7 @@
   "components": [
     "bass-offset",
     "center-level",
+    "display-clock",
     "front-eq",
     "messages",
     "timer"

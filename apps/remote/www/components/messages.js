@@ -30,7 +30,8 @@ export function createMessages(root, {request}) {
   let recent = load(RECENT_KEY, []);
   if (!Array.isArray(recent)) recent = [];
   recent = recent.filter(r => r && validText(r.text ?? '') && (r.id === '' || validId(r.id ?? ''))).slice(0, RECENT_MAX);
-  const outbox = {display_message: [], display_cancel: []};
+  const outbox = {display_message: [], display_cancel: [], display_clock: []};
+  const clockSwitch = $('message-clock');
   const messages = () => latest?.state?.messages || [];
   const busy = () => !latest?.ready || !!latest?.active;
 
@@ -142,6 +143,14 @@ export function createMessages(root, {request}) {
     $('message-state').textContent = d.error && d.field !== 'text' ? d.error : !context.ready ? 'Messages need the connection to the soundbar.' : '';
     renderList();
     renderRecent();
+    renderClock();
+  }
+  // The standby clock (bar91.display-clock): the switch follows the bar unless a change is on its way.
+  function renderClock() {
+    const c = latest?.state?.display_clock;
+    if (!c) return;
+    if (!outbox.display_clock.length && latest.active !== 'display_clock') clockSwitch.checked = !!c.enabled;
+    clockSwitch.disabled = busy();
   }
   const refresh = () => { if (latest) render(latest); };
   text.addEventListener('input', refresh);
@@ -162,6 +171,12 @@ export function createMessages(root, {request}) {
   }
   radios(modeGroup, 'data-mode', b => { o.mode = b.dataset.mode; });
   radios(durationGroup, 'data-duration', b => { o.duration = Number(b.dataset.duration); });
+  clockSwitch.addEventListener('change', () => {
+    if (busy()) { clockSwitch.checked = !clockSwitch.checked; return; }
+    let tz = '';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { tz = ''; }
+    send_('display_clock', tz ? {enabled: clockSwitch.checked, tz} : {enabled: clockSwitch.checked});
+  });
   send.addEventListener('click', () => { const d = draft(); if (!send.disabled && d.parameters) send_('display_message', d.parameters); });
   // Clear all asks for a second tap, rather than a dialog.
   $('message-clear-all').addEventListener('click', () => {
