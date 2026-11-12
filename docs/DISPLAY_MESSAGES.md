@@ -70,10 +70,12 @@ The renderer keeps the text while `(tick − start) × ms_per_tick < length × 5
 
 ## Clock in standby
 
-With **Clock in standby** on, the display shows the time while the bar is in standby, as `18H54` (the display has no colon). It is below everything else:
+With **Clock in standby** on, the display shows the time while the bar is in standby, as `18 54` (the display has no colon; a space rather than a letter, so that no segment stays lit all the time). It is below everything else:
 - it never shows with the bar on: the bar's own screen (the source) stays;
 - it takes the display only when no message or timer of ours shows or waits, and the display has been free for a second, like a message;
 - it steps back at once for a new message or timer (it is not one of the messages that take turns), and for anything the bar shows (volume, `HELLO` at wake-up, `STDBY`); it comes back once the display is free again.
+
+To show it only at some hours, turn it on and off from Home Assistant (`switch.jbl_display_clock`) on a schedule.
 
 The page sends the browser's time zone (an IANA name such as `Europe/Paris`) with the switch; the bar's system clock is UTC, and the remote carries the time zone database. The setting is kept in `/var/JBLRemote/display-clock.json`, so the clock comes back after a restart.
 

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var clockScreen = regexp.MustCompile(`^text:\d\dH\d\d$`)
+var clockScreen = regexp.MustCompile(`^text:\d\d \d\d$`)
 
 // startClock runs a display manager and a clock on a fake display; the clock
 // starts on (UTC) unless off.

@@ -14,8 +14,10 @@ import (
 
 // Clock on the front display, in standby.
 //
-// When the owner turns it on, the display shows the time (18H54: the display
-// has no colon) while the bar is in standby and nothing else wants the screen.
+// When the owner turns it on, the display shows the time (18 54: the display
+// has no colon; a space, so that no segment stays lit all the time and wears
+// faster than the others) while the bar is in standby and nothing else wants
+// the screen.
 // It is the lowest priority there is:
 //   - it only takes the display when no message or timer of ours is showing or
 //     waiting (it is not one of the messages that take turns), and the display
@@ -31,7 +33,7 @@ import (
 
 const (
 	clockPath   = "/var/JBLRemote/display-clock.json"
-	clockFormat = "15H04"
+	clockFormat = "15 04"
 )
 
 type clockSettings struct {
