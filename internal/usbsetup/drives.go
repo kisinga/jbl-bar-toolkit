@@ -299,7 +299,7 @@ func darwinDrives(ctx context.Context, run RunFunc) ([]Drive, error) {
 				d.Partition = "/dev/" + p.DeviceIdentifier
 				d.Mount = p.MountPoint
 				d.Filesystem = p.Content
-				fat = p.Content == "Windows_FAT_32"
+				fat = p.Content == "Windows_FAT_32" || p.Content == "DOS_FAT_32"
 				if p.VolumeName != "" {
 					d.Name = p.VolumeName
 				}

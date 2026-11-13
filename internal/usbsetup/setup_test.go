@@ -407,6 +407,12 @@ func TestBoundedHTTPAndOrigins(t *testing.T) {
 }
 
 func TestMacDiscoveryBootProtection(t *testing.T) {
+	for _, fat := range []string{"Windows_FAT_32", "DOS_FAT_32"} {
+		t.Run(fat, func(t *testing.T) { testMacDiscoveryBootProtection(t, fat) })
+	}
+}
+
+func testMacDiscoveryBootProtection(t *testing.T, fat string) {
 	encode := func(v any) []byte {
 		b, e := plist.Marshal(v, plist.XMLFormat)
 		if e != nil {
@@ -418,7 +424,7 @@ func TestMacDiscoveryBootProtection(t *testing.T) {
 		key := strings.Join(args, " ")
 		switch key {
 		case "list -plist external physical":
-			return encode(map[string]any{"AllDisksAndPartitions": []any{map[string]any{"DeviceIdentifier": "disk3", "Content": "FDisk_partition_scheme", "Size": uint64(8 << 30), "Partitions": []any{map[string]any{"DeviceIdentifier": "disk3s1", "Content": "Windows_FAT_32", "MountPoint": "/Volumes/JBL", "VolumeName": "JBL"}}}, map[string]any{"DeviceIdentifier": "disk0", "Content": "FDisk_partition_scheme", "Size": uint64(8 << 30)}}}), nil
+			return encode(map[string]any{"AllDisksAndPartitions": []any{map[string]any{"DeviceIdentifier": "disk3", "Content": "FDisk_partition_scheme", "Size": uint64(8 << 30), "Partitions": []any{map[string]any{"DeviceIdentifier": "disk3s1", "Content": fat, "MountPoint": "/Volumes/JBL", "VolumeName": "JBL"}}}, map[string]any{"DeviceIdentifier": "disk0", "Content": "FDisk_partition_scheme", "Size": uint64(8 << 30)}}}), nil
 		case "info -plist /":
 			return encode(map[string]any{"ParentWholeDisk": "disk4", "APFSContainerReference": "disk4"}), nil
 		case "apfs list -plist":

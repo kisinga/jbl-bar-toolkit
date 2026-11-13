@@ -227,7 +227,7 @@ printf 'fixture-connection\\n' > "{ssh}/connection.txt"
 exit 0
 '''))
             immutable_names = [line.split('  ', 1)[1] for line in (usb / 'SHA256SUMS').read_text().splitlines()]
-            if label == 'credentials_in_config':
+            if label in ('credentials_in_config', 'wifi_failure_then_configure_without_wifi'):
                 for name in ('files/ssh/password.hash', 'files/ssh/wifi.ssid.hex', 'files/ssh/wifi.psk.hex'):
                     (usb / name).unlink()
                     immutable_names.remove(name)
@@ -390,6 +390,11 @@ exit 0
                         log = (usb / 'setup.log').read_text()
                         assert 'WIFI_REASON=WIFI_NOT_CONNECTED WIFI_EXIT=1' in log, log
                         assert (usb / 'WIFI_STATUS.txt').read_text() == 'WIFI_NOT_CONNECTED\n'
+                        if label == 'wifi_failure_then_configure_without_wifi':
+                            (usb / 'config.txt').write_bytes(changed(action='configure', ssh='false'))
+                            result, status = launch()
+                            assert result.returncode == 0 and status == 'INSTALLED_PENDING_REBOOT_TEST', (status, (usb / 'setup.log').read_text())
+                            assert not (store / 'ssh-input/wifi.ssid.hex').exists() and not (store / 'ssh-input/wifi.psk.hex').exists()
                     else:
                         assert not store.exists()
                     passed(label)
@@ -606,7 +611,8 @@ exit 0
     scenario('install_recover_originally_absent_hook', hook_present=False)
     scenario('automation_without_web_or_ssh', config=changed(ssh='false', web_remote='false'))
     scenario('all_features_ssh_uses_managed_install', config=CONFIG)
-    scenario('credentials_in_config', config=CONFIG + ('ssh_password_hash=' + build_ssh.password_hash('fixture-config-password', 'fixturesalt') + '\nwifi_ssid_hex=66697874757265\nwifi_psk_hex=' + 'a'*64 + '\n').encode())
+    credentials = CONFIG + ('ssh_password_hash=' + build_ssh.password_hash('fixture-config-password', 'fixturesalt') + '\nwifi_ssid_hex=66697874757265\nwifi_psk_hex=' + 'a'*64 + '\n').encode()
+    scenario('credentials_in_config', config=credentials)
     scenario('ssh_only', config=changed(web_remote='false', auto_standard='false'))
     scenario('web_only', config=changed(ssh='false', auto_standard='false'))
     scenario('all_features_initially_disabled', config=changed(ssh='false', web_remote='false', auto_standard='false'))
@@ -618,6 +624,7 @@ exit 0
     scenario('preflight_failure_before_mutation', fail='preflight')
     scenario('ssh_failure_disables_partial_install', fail='ssh', config=CONFIG)
     scenario('wifi_failure_reports_reason_on_usb', fail='wifi', config=CONFIG)
+    scenario('wifi_failure_then_configure_without_wifi', fail='wifi', config=credentials)
     scenario('standalone_install_preserved', existing='ssh')
     scenario('unsafe_hook_preserved', existing='hook_symlink')
     scenario('atomic_manager_publish_failure_preserves_original_hook', fail='publish')

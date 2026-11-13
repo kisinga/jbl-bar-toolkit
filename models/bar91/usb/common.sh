@@ -28,11 +28,20 @@ probe_native() {
     [ ! -e "$LOCK/inspect-remote" ] && [ ! -L "$LOCK/inspect-remote" ] || return 1
     "$BB" cp "$USB/files/remote" "$LOCK/inspect-remote" && "$BB" chmod 700 "$LOCK/inspect-remote" || return 1
     if [ "${1-}" = awake ]; then
-        "$BB" timeout 20 "$LOCK/inspect-remote" -inspect-device -require-awake > "$USB/native-check.json"
+        # Some bars run AutoScript only at boot, before the native state is On.
+        awake_wait=0
+        while :; do
+            "$BB" timeout 20 "$LOCK/inspect-remote" -inspect-device -require-awake > "$USB/native-check.json"
+            probe_result=$?
+            [ "$probe_result" -ne 0 ] && [ "$awake_wait" -lt 36 ] || break
+            ! "$BB" grep -q '"power":"On"' "$USB/native-check.json" || break
+            awake_wait=$((awake_wait+1))
+            "$BB" sleep 5
+        done
     else
         "$BB" timeout 20 "$LOCK/inspect-remote" -inspect-device > "$USB/native-check.json"
+        probe_result=$?
     fi
-    probe_result=$?
     "$BB" rm -f "$LOCK/inspect-remote"
     return "$probe_result"
 }

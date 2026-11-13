@@ -136,6 +136,8 @@ done
 atomic_copy "$config_source" "$STORE/config.txt" || finish CONFIG_SAVE_FAILED 1
 [ ! -e "$STORE/ssh-input" ] || directory "$STORE/ssh-input" || finish SSH_STAGE_CONFLICT 1
 "$BB" mkdir -p "$STORE/ssh-input" || finish SSH_STAGE_FAILED 1
+# A failed Wi-Fi step leaves its credentials staged; never reprovision from them.
+"$BB" rm -f "$STORE/ssh-input/wifi.ssid.hex" "$STORE/ssh-input/wifi.psk.hex" || finish WIFI_STAGE_CLEANUP_FAILED 1
 for path in "$USB"/files/ssh/*; do
     if [ "$update_existing" = true ]; then
         case "${path##*/}" in password.hash|wifi.ssid.hex|wifi.psk.hex) continue;; esac

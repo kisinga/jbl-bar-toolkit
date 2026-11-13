@@ -156,6 +156,9 @@ integration ([setup](docs/models/bar91/STANDALONE.md#home-assistant)).
 - **The USB check is blocked:** read **Soundbar check results** in setup, including the native
   check and latest setup log. The files under `JBLToolkit/` explain what failed. Use the
   [installation and recovery guide](docs/models/bar91/USB-TOOLKIT.md) for next steps.
+- **The USB comes back without any results:** some bars only read the USB while
+  starting. Unplug the bar from power, insert the USB, reconnect power and turn
+  the bar on within about three minutes. Then wait five minutes as usual.
 - **Need to undo an installation:** use the matching recovery ZIP and the
   [recovery instructions](docs/models/bar91/USB-TOOLKIT.md). Keep the original files
   for your installed version.
