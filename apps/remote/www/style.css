@@ -160,9 +160,11 @@ input[type=range]{height:44px}
 .monitor-summary>#system-status{max-width:none}
 }
 @media(max-width:480px){
-header{height:auto;min-height:100px;padding:18px 0;gap:12px;flex-wrap:wrap}
-.header-status{gap:4px}
-.wordmark small{max-width:115px;white-space:normal}
+header{height:auto;min-height:84px;padding:14px 0;gap:10px}
+.header-status{gap:4px;flex-shrink:0}
+header>a{min-width:0}
+/* Phones: the tagline gives way so the status keeps its words on one row. */
+.wordmark small{display:none}
 .monitor-summary{flex-wrap:wrap;gap:6px}
 .monitor-summary>#system-status{text-align:left}
 }
