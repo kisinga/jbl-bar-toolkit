@@ -10,7 +10,7 @@ const systemFixture = () => ({sample:1,cpu_percent:18.2,cpu_cores:2,load_average
 const eqFixture = () => ({available:true,enabled:false,gains_db:[0,0,0,0,0],frequencies_hz:[125,500,2000,4000,8000],status:'original'});
 const initial = () => ({eq:eqFixture(),system:systemFixture(),available:true, power:'On', mode:'Standard', volume:12, muted:false, input:'TV / ARC', source:6, source_state:0, hostname:'jbl.local', csrf:'fixture', uptime:90300, watcher:'STANDARD_THIS_WAKE', sound:{bass:0,center:0,atmos:1,rear:2,rear_docked:true,rear_battery_left:80,rear_battery_right:90,night:false,av_sync_ms:20}, wifi:{available:true,connected:true,ssid:'Example Wi-Fi',ip:'192.168.50.1',signal_dbm:-48,frequency_mhz:5180}, bluetooth:{selected:false,connectable:false,discoverable:false,connected:false,media_ready:true,audio:'Disconnected',name:'My speaker'}});
 let screenshotFeatures = null;
-let timerIds = 0, state = initial(), calls = [], lastPayload = null, delay = 300, failure = '', offline = false, getDelay = 0, advertisedControls = null;
+let rebootCalls = 0, timerIds = 0, state = initial(), calls = [], lastPayload = null, delay = 300, failure = '', offline = false, getDelay = 0, advertisedControls = null;
 const streams=new Set(); let stateGets=0, streamGets=0, revision=0, lastSnapshot='';
 function snapshot() {
  state.media_controls=[];
@@ -78,6 +78,7 @@ const server = createServer(async (req, res) => {
       if (action === 'bar91.display-message.show') { const box=state.extensions['bar91.display-message']; const p=payload.parameters; const id=p.id??'default'; const fold=p.text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); const m={id,named:id!=='default',text:fold,mode:p.forever?'forever':p.duration_s?'duration':'passes',showing:box.messages.length===0,stop_on_key:!!p.stop_on_key}; if(p.repeat) m.passes_left=p.repeat; if(!p.forever&&!p.duration_s&&!p.repeat) m.passes_left=1; if(p.duration_s) m.remaining_ms=p.duration_s*1000; const i=box.messages.findIndex(x=>x.id===id); if(i>=0){m.showing=box.messages[i].showing;box.messages[i]=m;} else box.messages.push(m); }
       if (action === 'bar91.display-clock.set') { const p=payload.parameters, c=state.extensions['bar91.display-clock']??{}; state.extensions['bar91.display-clock']={enabled:p.enabled??c.enabled,when:p.when??c.when??'standby',tz:p.tz??c.tz??''}; }
       if (action === 'bar91.display-message.cancel') { const box=state.extensions['bar91.display-message']; const id=payload.parameters?.id; box.messages=id?box.messages.filter(m=>m.id!==id):[]; if(box.messages[0]) box.messages[0].showing=true; }
+      if (action === 'bar91.system.reboot') { rebootCalls++; }
       if (action === 'bar91.timer.cancel') { const box=state.extensions['bar91.timer']; box.timers=box.timers.filter(t=>t.id!==payload.parameters.id); }
       if (action === 'calibrate') state.setup={...state.setup,calibration:'Step 1 starting'};
       if (action === 'sub_pair') state.setup={...state.setup,sub_pairing:true};
@@ -1001,6 +1002,19 @@ try {
   check(await page.locator('#messages-panel').evaluate(panel=>{const box=panel.getBoundingClientRect();return [...panel.querySelectorAll('input,button,.message-item')].filter(e=>e.getBoundingClientRect().height>0).every(e=>{const r=e.getBoundingClientRect();return r.left>=box.left-1 && r.right<=box.right+1;});}),'message controls stay inside the panel at 320 px');
   check(await page.locator('#messages-panel button').evaluateAll(buttons=>buttons.filter(b=>b.getBoundingClientRect().height>0).every(b=>b.getBoundingClientRect().height>=44)),'message buttons have 44 px targets');
   await page.locator('#message-input').fill('');
+  // Restart the soundbar (extension bar91.system), at the bottom of the System monitor.
+  screenshotFeatures={...screenshotFeatures,extensions:[...screenshotFeatures.extensions,{id:'bar91.system',component:'reboot',included:true,actions:['bar91.system.reboot']}]};
+  await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#restart-panel').hidden);
+  check(await page.locator('#restart-panel').evaluate(e=>!!e.closest('#system-panel')) && (await page.locator('#restart').textContent())==='Restart…','the restart sits at the bottom of the System monitor');
+  await page.locator('#restart').click();
+  check((await page.locator('#restart').textContent())==='Tap again to restart' && rebootCalls===0 && /Tap again within 5 seconds/.test(await page.locator('#restart-note').textContent()),'a first tap only asks for confirmation');
+  await page.locator('#restart').screenshot({path:fileURLToPath(new URL('build/restart-confirm.png',root))});
+  await page.locator('#restart').click();
+  await page.waitForFunction(()=>document.querySelector('#restart').textContent==='Restarting…');
+  for(let i=0;i<30 && rebootCalls===0;i++) await pause(100);
+  check(rebootCalls===1 && JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.system.reboot',parameters:{confirm:true}}),'the second tap restarts, with confirm');
+  check(await page.locator('#restart').evaluate(b=>b.getBoundingClientRect().height>=44),'the restart button has a 44 px target');
   state.power='On';
   await page.setViewportSize({width:1200,height:1050});
   await page.locator('.device-details summary').click();

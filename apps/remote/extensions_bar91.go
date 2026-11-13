@@ -18,6 +18,7 @@ var bar91ActionAliases = map[string]string{
 	"center_next":     "bar91.center-level.next",
 	"display_message": "bar91.display-message.show", "display_cancel": "bar91.display-message.cancel",
 	"display_clock": "bar91.display-clock.set",
+	"reboot":        "bar91.system.reboot",
 	"timer_start":   "bar91.timer.start", "timer_cancel": "bar91.timer.cancel", "timer_extend": "bar91.timer.extend",
 }
 
@@ -35,6 +36,9 @@ func (r *remote) registerBar91Extensions() error {
 		return err
 	}
 	if err := r.registerDisplayClock(); err != nil {
+		return err
+	}
+	if err := r.registerReboot(); err != nil {
 		return err
 	}
 	eq := func(action string) extension.Handler[state] {

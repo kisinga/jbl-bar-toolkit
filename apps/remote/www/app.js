@@ -8,6 +8,7 @@ import {createCapabilities} from './components/capabilities.js';
 import {createBassOffset} from './components/bass-offset.js';
 import {createTimer} from './components/timer.js';
 import {createMessages} from './components/messages.js';
+import {createRestart} from './components/restart.js';
 import {createAdvanced} from './components/advanced.js';
 import {createSpeakers} from './components/speakers.js';
 
@@ -30,7 +31,8 @@ const timer=createTimer($('timer-panel'),{supports:action=>capabilities.command(
 const advanced=createAdvanced($('advanced'),$('room-setup'));
 const speakers=createSpeakers($('speaker-view'));
 const messages=createMessages($('messages-panel'),{request:action=>{if(!csrf||!online||queue.length>=8)return false;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();return true;}});
-const components=[bluetooth,sound,playback,system,equalizer,details,advanced,bassOffset,speakers,timer,messages];
+const restart=createRestart($('restart-panel'),{request:action=>{if(!csrf||!online||queue.length>=8)return false;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();return true;}});
+const components=[bluetooth,sound,playback,system,equalizer,details,advanced,bassOffset,speakers,timer,messages,restart];
 let syncTimer=null;
 // Readiness shared by the shell and every component. A control sent from
 // elsewhere (another page, Home Assistant, the wake automation) holds the bar:
@@ -213,6 +215,7 @@ function success(action, s) {
   if (action === 'timer_extend') return 'Time added.';
   if (action === 'display_message') return 'Message sent to the bar.';
   if (action === 'display_cancel') return 'Message cleared.';
+  if (action === 'reboot') return 'The soundbar is restarting. This page reconnects by itself.';
   if (action === 'display_clock') { const c = s.extensions?.['bar91.display-clock']; return !c?.enabled ? 'Clock off.' : c.when === 'always' ? 'Clock on, in standby and with the bar on.' : 'Clock on, in standby.'; }
   if (action === 'center_next') return 'Center level ' + s.sound.center + ' selected.';
   if (action === 'atmos_next') return 'Atmos height: ' + ['Low','Mid','High'][s.sound.atmos] + '.';
@@ -233,6 +236,7 @@ function pendingMessage() {
   if (active === 'timer_extend') return 'Adding time…';
   if (active === 'display_message') return 'Sending the message…';
   if (active === 'display_cancel') return 'Clearing…';
+  if (active === 'reboot') return 'Restarting the soundbar…';
   if (active === 'display_clock') return 'Setting the clock…';
   if (active === 'eq_reset') return 'Restoring original tuning…';
 	if (active === 'night_toggle') return 'Changing night mode… audio may briefly mute.';
@@ -297,7 +301,7 @@ async function pump() {
   if (active || !queue.length || !online) return;
   active = queue.shift();
   const gains = active === 'eq_apply' ? equalizer.gains() : null;
-  const parameters=active==='bass_offset_set'?bassOffset.parameters():active?.startsWith('timer_')?timer.parameters(active):active?.startsWith('display_')?messages.parameters(active):null;
+  const parameters=active==='bass_offset_set'?bassOffset.parameters():active?.startsWith('timer_')?timer.parameters(active):active?.startsWith('display_')?messages.parameters(active):active==='reboot'?restart.parameters(active):null;
   const syncTarget=active==='av_sync_set'?advanced.target():null;
   epoch++;
   render();

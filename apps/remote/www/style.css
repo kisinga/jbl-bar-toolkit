@@ -356,3 +356,10 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .display-panels{display:grid;gap:15px;margin-top:15px;align-items:start}
 .display-panels>.panel{margin-top:0}
 @media(min-width:900px){.display-panels{grid-template-columns:repeat(auto-fit,minmax(380px,1fr))}.timer-body,.messages-body{max-width:none}}
+/* Restart: out of the way, at the bottom of the System monitor; confirmed by a second tap. */
+.system-restart{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 20px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.system-restart>div{flex:1 1 260px;min-width:0}
+.system-restart h3{font-size:var(--font-small);font-weight:600;margin:0 0 4px}
+.system-restart p{margin:0;color:var(--subtle);font-size:var(--font-caption)}
+.restart-button{min-height:44px;border-radius:22px;padding:0 18px;font-size:var(--font-small);color:var(--muted)}
+.restart-button.confirm{border-color:var(--danger);color:var(--danger);background:#f2a5a514}
