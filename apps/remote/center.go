@@ -292,7 +292,7 @@ const centerDisplayID = "center-level"
 
 // centerDisplayText is how the front display shows a center level, numbered
 // 1 to 6 like the page.
-func centerDisplayText(level uint32) string { return fmt.Sprintf("CENTER %d", level+1) }
+func centerDisplayText(level uint32) string { return fmt.Sprintf("CTR %d", level+1) }
 
 // showCenterLevel shows the level just applied on the front display, as the
 // bar does for its own bass level: the center level is not native, so the bar
