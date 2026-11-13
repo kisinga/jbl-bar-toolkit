@@ -10,6 +10,10 @@ feedback. External integration and hardware qualification remain pending.
 appended MCU/TX/RX firmware sections and the separate DARR83 wireless audio path.
 No independent rear Bluetooth mode or software unlock has been established.
 
+[Bar 9.1 telemetry and microphone audit](bar91-privacy.md) records offline REA
+findings on Cast metrics and crash uploads, local calibration recording, speech
+synthesis resources, and the limits of the voice-recognition investigation.
+
 ## Other JBL bars
 
 [Bar 800/1000/1300 research](bar-family/README.md) contains the historical firmware

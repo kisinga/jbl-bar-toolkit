@@ -4,6 +4,17 @@ User-facing changes go here. Before publishing another release, change the root
 `VERSION` file and add a matching `## <version>` section. Release notes are
 generated from that section plus the installation and recovery instructions.
 
+## 0.3.0-dev.11
+
+- Add experimental front-display messages with repeat, duration and until-cleared options; multiple messages take turns and can be cleared with the JBL remote.
+- Add experimental timers with front-display countdowns, optional Chromecast chimes, adjustable ringing volume and duration, and controls to add time or stop an alarm. Restore standby after a timer wakes the bar to play its chime.
+- Add an optional front-display clock for standby or whenever the bar is on, with a saved time zone; messages, timers and the bar's own screens take priority.
+- Show center-level changes on the front display, reflect standby in the remote's power button, and add a confirmed soundbar restart action to the remote and API.
+- Automatically clear Front EQ when it cannot remain active, show whether it is active or waiting, and simplify turning it off with Original.
+- Migrate the public v0.1.0 revision 5 Smart Mode installation through USB setup. Explain installation failures, report Wi-Fi failure reasons and stop before installation if an old SSH server still owns port 2222.
+- Recognize FAT32 drives as named by macOS 26, wait for the bar to turn on when AutoScript runs at boot, and remove staged Wi-Fi credentials after a failed install.
+- Improve compact remote and setup layouts, with Timers and Messages side by side on wide screens.
+
 ## 0.3.0-dev.10
 
 - Credit verified, unchanged SSH support files in update storage checks while retaining the full 2 MiB safety reserve.
