@@ -18,6 +18,23 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 8 November 2026, first with a
   - messages with different ids take turns, pass by pass, never on screen together. Each keeps its own count, duration or forever: `HELLO` ×3 and then `GOODBYE` ×2 show `HELLO GOODBYE HELLO GOODBYE HELLO`. One that ends leaves the rotation, and one that arrives joins it.
 - **Cancel** one id, or every message.
 
+## In the page
+
+The **Messages** panel works with the bar on or in standby:
+
+- **On the bar** lists the messages in course:
+  - the one showing first, with a lit dot, then the others in line;
+  - each with its text as the bar shows it, its name (or *Unnamed*), what is left (`3 times left`, `14:52 left`, `until cleared`) and ×;
+  - **Clear all messages**, which asks for a second tap. Timers are not affected.
+- **Send again** repeats one of the last four messages sent from this device, with its name and how long.
+- **Leave a message**:
+  - the text, previewed as the bar shows it (`The bar shows: FRIGO FERME`). A character the display cannot show is refused under the field;
+  - an optional name;
+  - **Clear it with a key on the JBL remote**, on by default: whoever reads the message presses any key, and it goes away, as a sign it was seen;
+  - **How long**, folded, with its choice in the summary: a number of times (1 to 99), for a while (1, 5 or 15 minutes, or 1 hour), or until cleared (the default, since a message left for someone stays until it is seen);
+  - under **Show on the bar**, a line says how long it shows and which message it replaces, if any.
+- **Clock**: Off, In standby or Always; see below.
+
 ## API
 
 `GET /api/features` lists the `bar91.display-message` extension. The usual LAN, same-origin and CSRF protections apply. Both actions return at once; the message is shown in the background.
@@ -26,11 +43,14 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 8 November 2026, first with a
 {"action":"bar91.display-message.show","parameters":{"text":"Frigo ouvert","id":"fridge","forever":true}}
 {"action":"bar91.display-message.show","parameters":{"text":"Frigo fermé","id":"fridge","repeat":1}}
 {"action":"bar91.display-message.show","parameters":{"text":"Colis livré","duration_s":300}}
+{"action":"bar91.display-message.show","parameters":{"text":"Pain dans le four","forever":true,"stop_on_key":true}}
 {"action":"bar91.display-message.cancel","parameters":{"id":"fridge"}}
 {"action":"bar91.display-message.cancel"}
 ```
 
-`display_message` and `display_cancel` are short aliases. `repeat`, `duration_s` and `forever` are mutually exclusive. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
+`display_message` and `display_cancel` are short aliases. A message sent without an `id` has the id `default`: there is one at a time, and `{"id":"default"}` clears it.
+
+The state lists the messages in course under `extensions["bar91.display-message"].messages`, the one showing first. Each entry has `id`, `named` (false for `default`), `text` (as shown), `mode` (`passes`, `duration` or `forever`), `passes_left` or `remaining_ms` (as of that state), `showing` and `stop_on_key`. Timers and the center level are not listed. `repeat`, `duration_s` and `forever` are mutually exclusive. With `stop_on_key`, any key on the JBL remote clears the message, on or in standby, like a timer's alarm: only a press seen after a release counts, the keys the remote sends itself do not, and with several such messages a press clears the one shown. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
 
 ## How it works
 
@@ -47,6 +67,23 @@ The renderer keeps the text while `(tick − start) × ms_per_tick < length × 5
 **Standby.** Level 3 is drawn before level 2. In standby it holds `28`, a blank screen that the display module sets itself about 1.7 s after `STDBY`; no code outside the display module reads or writes it. While a message shows in standby, the remote sets level 3 to `52` (none), then puts `28` back. If the bar wakes up in the meantime, level 3 becomes the bar's again and is left alone.
 
 **Limits.** Writes are restricted to these four fields (`display_native.go`). Each step takes the shared action gate, unreported, like the other monitors. When a control holds the gate, the step waits for the next poll. Handing the display back retries for 5 s and then writes without the gate, so a message never outlives its request.
+
+## Clock
+
+**Clock** (Off, In standby, Always) shows the time on the display, as `18 54` (the display has no colon; a space rather than a letter, so that no segment stays lit all the time). *In standby* shows it only while the bar is in standby; *Always* also with the bar on, in place of the bar's idle screen (the source's name). It is below everything else:
+- it takes the display only when no message or timer of ours shows or waits, and the display has been free for a second, like a message;
+- it steps back at once for a new message or timer (it is not one of the messages that take turns), and for anything the bar shows (volume, `HELLO` at wake-up, `STDBY`); it comes back once the display is free again;
+- *In standby* never covers the bar's idle screen with the bar on.
+
+To show it only at some hours, turn it on and off from Home Assistant (`switch.jbl_display_clock`) on a schedule.
+
+The page sends the browser's time zone (an IANA name such as `Europe/Paris`); the bar's system clock is UTC, and the remote carries the time zone database. The setting is kept in `/var/JBLRemote/display-clock.json`, so the clock comes back after a restart.
+
+```json
+{"action":"bar91.display-clock.set","parameters":{"enabled":true,"when":"always","tz":"Europe/Paris"}}
+```
+
+Each parameter is optional, but `enabled` or `when` must be there; the others keep their value. `when` is `standby` (the default) or `always`; `tz` an IANA time zone (UTC by default). The short alias is `display_clock`. The state reports `extensions["bar91.display-clock"]` = `{"enabled": true, "when": "always", "tz": "Europe/Paris"}`. It uses the same four fields as the messages and hands the standby screen back the same way. `display_clock_test.go` covers standby only, the bar on with *Always* (the volume, a message, back to *In standby*, the bar going to standby), giving way to a message (whose passes are never interleaved with the clock) and to the bar's screens, the wake-up, and the saved setting with its time zone.
 
 ## Tests
 
