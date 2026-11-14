@@ -151,7 +151,11 @@ func (r *remote) registerDisplayMessage() error {
 	return r.extensions.Register(extension.Module[state]{
 		Descriptor: extension.Descriptor{ID: "bar91.display-message", Component: "messages", Name: "Display messages", Model: "bar91", Included: true, Experimental: true},
 		// The messages in course, for the page and Home Assistant.
-		Project: func(state) any { return map[string]any{"messages": r.display.List()} },
+		// options: what show takes beyond the text and the length, so that
+		// clients offer only what this remote knows.
+		Project: func(state) any {
+			return map[string]any{"messages": r.display.List(), "options": []string{"stop_on_key", "when_on"}}
+		},
 		Actions: map[string]extension.Handler[state]{
 			"bar91.display-message.show": func(ctx context.Context, data json.RawMessage) (state, error) {
 				request, err := parseDisplayShow(data)

@@ -91,6 +91,22 @@ func (m barDisplayMem) writeDisplay(address int64, b []byte) error {
 	return e
 }
 
+// The bar's power, as the state reads it (snapshotCurrent): on when the power
+// flag is 1 and the system state 0.
+const (
+	barPowerFlag   = 14191893 // 1 byte
+	barSystemState = 12962676
+)
+
+func (m barDisplayMem) awake() (bool, error) {
+	p, e := m.d.read(barPowerFlag, 1)
+	if e != nil {
+		return false, e
+	}
+	system, e := m.d.read(barSystemState, 4)
+	return e == nil && p == 1 && system == 0, e
+}
+
 func (m barDisplayMem) keyDown() (bool, error) {
 	v, e := m.d.read(vfdKeyFlag, 1)
 	return v != 0, e

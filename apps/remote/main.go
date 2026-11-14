@@ -421,8 +421,8 @@ func (d *device) snapshotCurrent() state {
 		s.Automation = &a
 		s.Watcher = a.Status
 	}
-	p, ep := d.read(14191893, 1)
-	system, es := d.read(12962676, 4)
+	p, ep := d.read(barPowerFlag, 1)
+	system, es := d.read(barSystemState, 4)
 	mode, em := d.read(13378532, 4)
 	if ep != nil || es != nil || em != nil {
 		s.Error = "Soundbar state is temporarily unavailable"

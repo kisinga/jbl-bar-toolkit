@@ -75,7 +75,7 @@ const server = createServer(async (req, res) => {
       if (action === 'av_sync_set') state.sound.av_sync_ms=payload.value;
       if (action === 'bar91.timer.start') { const timers=state.extensions['bar91.timer'].timers; timerIds++; timers.push({id:'t'+timerIds,text:payload.parameters.text??'',countdown:payload.parameters.countdown,sound:payload.parameters.sound??'off',remaining_ms:payload.parameters.duration_s*1000,duration_ms:payload.parameters.duration_s*1000,ringing:false}); }
       if (action === 'bar91.timer.extend') { const t=state.extensions['bar91.timer'].timers.find(t=>t.id===payload.parameters.id); t.remaining_ms+=payload.parameters.add_s*1000; t.duration_ms+=payload.parameters.add_s*1000; }
-      if (action === 'bar91.display-message.show') { const box=state.extensions['bar91.display-message']; const p=payload.parameters; const id=p.id??'default'; const fold=p.text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); const m={id,named:id!=='default',text:fold,mode:p.forever?'forever':p.duration_s?'duration':'passes',showing:box.messages.length===0,stop_on_key:!!p.stop_on_key}; if(p.repeat) m.passes_left=p.repeat; if(!p.forever&&!p.duration_s&&!p.repeat) m.passes_left=1; if(p.duration_s) m.remaining_ms=p.duration_s*1000; const i=box.messages.findIndex(x=>x.id===id); if(i>=0){m.showing=box.messages[i].showing;box.messages[i]=m;} else box.messages.push(m); }
+      if (action === 'bar91.display-message.show') { const box=state.extensions['bar91.display-message']; const p=payload.parameters; const id=p.id??'default'; const fold=p.text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); const held=!!p.when_on&&state.power!=='On'; const m={id,named:id!=='default',text:fold,mode:p.forever?'forever':p.duration_s?'duration':'passes',showing:!held&&box.messages.length===0,stop_on_key:!!p.stop_on_key,when_on:!!p.when_on,held}; if(p.repeat) m.passes_left=p.repeat; if(!p.forever&&!p.duration_s&&!p.repeat) m.passes_left=1; if(p.duration_s) m.remaining_ms=p.duration_s*1000; const i=box.messages.findIndex(x=>x.id===id); if(i>=0){m.showing=box.messages[i].showing;box.messages[i]=m;} else box.messages.push(m); }
       if (action === 'bar91.display-clock.set') { const p=payload.parameters, c=state.extensions['bar91.display-clock']??{}; state.extensions['bar91.display-clock']={enabled:p.enabled??c.enabled,when:p.when??c.when??'standby',tz:p.tz??c.tz??''}; }
       if (action === 'bar91.display-message.cancel') { const box=state.extensions['bar91.display-message']; const id=payload.parameters?.id; box.messages=id?box.messages.filter(m=>m.id!==id):[]; if(box.messages[0]) box.messages[0].showing=true; }
       if (action === 'bar91.system.reboot') { rebootCalls++; }
@@ -972,6 +972,21 @@ try {
   await page.waitForFunction(()=>document.querySelector('#power-label').textContent==='Turn on');
   await page.locator('#message-input').fill('Bonne nuit');
   check(!(await page.locator('#message-send').isDisabled()),'messages can be sent with the bar in standby');
+  check(await page.locator('#message-when-on-row').isHidden(),'no Wait until the bar is on with a remote that does not know it');
+  state.extensions['bar91.display-message'].options=['stop_on_key','when_on'];
+  await page.waitForFunction(()=>!document.querySelector('#message-when-on-row').hidden);
+  check(!(await page.locator('#message-when-on').isChecked()),'Wait until the bar is on: offered, off by default');
+  await page.locator('#message-when-on').check();
+  check(/^Once the bar is on \(now if it is\), shows until cleared/.test(await page.locator('#message-explain').textContent()),'what will happen says it waits for the bar to be on');
+  await page.locator('#message-send').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item.held').length===1);
+  check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Bonne nuit',forever:true,when_on:true}}),'the message is sent with when_on');
+  check(/· when the bar is turned on$/.test(await page.locator('.message-item.held .message-detail').textContent()) && (await page.locator('#message').textContent()).includes('Message kept for when the bar is turned on.'),'a held message says it shows when the bar is turned on');
+  check((await page.locator('#message-recent .timer-recent-item').first().textContent()).endsWith('· when on'),'the recent message keeps the option');
+  await page.locator('#messages-panel').screenshot({path:fileURLToPath(new URL('build/messages-when-on.png',root))});
+  await page.locator('#message-when-on').uncheck();
+  await page.locator('.message-item.held .timer-cancel').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===0);
   // The standby clock (extension bar91.display-clock), in the Messages panel.
   check(await page.locator('#message-clock-section').isHidden(),'no clock switch when the remote has no standby clock');
   screenshotFeatures={...screenshotFeatures,extensions:[...screenshotFeatures.extensions,{id:'bar91.display-clock',component:'display-clock',included:true,actions:['bar91.display-clock.set']}]};
