@@ -16,6 +16,7 @@ Qualified on one Bar 9.1 (firmware 23.06.41.80) on 8 November 2026, first with a
 - **Ids.** Each message has an id (`default` when none is given):
   - a new message with the same id replaces the old one, whether it is showing or waiting, and takes its place in line;
   - messages with different ids take turns, pass by pass, never on screen together. Each keeps its own count, duration or forever: `HELLO` ×3 and then `GOODBYE` ×2 show `HELLO GOODBYE HELLO GOODBYE HELLO`. One that ends leaves the rotation, and one that arrives joins it.
+- **When the bar is on** (optional). The message waits while the bar is in standby, out of the line: other messages and the clock show meanwhile. It shows once someone turns the bar on, or at once if it is on, so that someone using the bar sees it. Its duration counts from then. It is checked every second, through the bar's power state.
 - **Cancel** one id, or every message.
 
 ## In the page
@@ -24,13 +25,14 @@ The **Messages** panel works with the bar on or in standby:
 
 - **On the bar** lists the messages in course:
   - the one showing first, with a lit dot, then the others in line;
-  - each with its text as the bar shows it, its name (or *Unnamed*), what is left (`3 times left`, `14:52 left`, `until cleared`) and ×;
+  - each with its text as the bar shows it, its name (or *Unnamed*), what is left (`3 times left`, `14:52 left`, `until cleared`) and ×. One waiting for the bar to be on has a hollow dot and says *when the bar is turned on*;
   - **Clear all messages**, which asks for a second tap. Timers are not affected.
 - **Send again** repeats one of the last four messages sent from this device, with its name and how long.
 - **Leave a message**:
   - the text, previewed as the bar shows it (`The bar shows: FRIGO FERME`). A character the display cannot show is refused under the field;
   - an optional name;
   - **Clear it with a key on the JBL remote**, on by default: whoever reads the message presses any key, and it goes away, as a sign it was seen;
+  - **Wait until the bar is on**, off by default: the message is kept while the bar is in standby and shows when someone turns it on;
   - **How long**, folded, with its choice in the summary: a number of times (1 to 99), for a while (1, 5 or 15 minutes, or 1 hour), or until cleared (the default, since a message left for someone stays until it is seen);
   - under **Show on the bar**, a line says how long it shows and which message it replaces, if any.
 - **Clock**: Off, In standby or Always; see below.
@@ -44,13 +46,14 @@ The **Messages** panel works with the bar on or in standby:
 {"action":"bar91.display-message.show","parameters":{"text":"Frigo fermé","id":"fridge","repeat":1}}
 {"action":"bar91.display-message.show","parameters":{"text":"Colis livré","duration_s":300}}
 {"action":"bar91.display-message.show","parameters":{"text":"Pain dans le four","forever":true,"stop_on_key":true}}
+{"action":"bar91.display-message.show","parameters":{"text":"Rappelle mamie","forever":true,"stop_on_key":true,"when_on":true}}
 {"action":"bar91.display-message.cancel","parameters":{"id":"fridge"}}
 {"action":"bar91.display-message.cancel"}
 ```
 
 `display_message` and `display_cancel` are short aliases. A message sent without an `id` has the id `default`: there is one at a time, and `{"id":"default"}` clears it.
 
-The state lists the messages in course under `extensions["bar91.display-message"].messages`, the one showing first. Each entry has `id`, `named` (false for `default`), `text` (as shown), `mode` (`passes`, `duration` or `forever`), `passes_left` or `remaining_ms` (as of that state), `showing` and `stop_on_key`. Timers and the center level are not listed. `repeat`, `duration_s` and `forever` are mutually exclusive. With `stop_on_key`, any key on the JBL remote clears the message, on or in standby, like a timer's alarm: only a press seen after a release counts, the keys the remote sends itself do not, and with several such messages a press clears the one shown. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
+The state lists the messages in course under `extensions["bar91.display-message"].messages`, the one showing first. Each entry has `id`, `named` (false for `default`), `text` (as shown), `mode` (`passes`, `duration` or `forever`), `passes_left` or `remaining_ms` (as of that state), `showing`, `stop_on_key`, `when_on` and `held` (true while it waits for the bar to be on; then `remaining_ms` is the whole duration, which has not started). `options` lists the parameters this remote takes beyond the text and the length (`stop_on_key`, `when_on`), so that clients offer only those. Timers and the center level are not listed. `repeat`, `duration_s` and `forever` are mutually exclusive. With `stop_on_key`, any key on the JBL remote clears the message, on or in standby, like a timer's alarm: only a press seen after a release counts, the keys the remote sends itself do not, and with several such messages a press clears the one shown. An `id` is 1–32 characters from `a-z 0-9 _ -`. The remote rejects invalid text, ids, counts, durations and unknown fields.
 
 ## How it works
 

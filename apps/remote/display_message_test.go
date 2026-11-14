@@ -29,6 +29,9 @@ func newFakeDisplay(level3 uint32) *fakeDisplay {
 	f := &fakeDisplay{origin: time.Now(), mem: map[int64]uint32{
 		vfdLevel2: vfdMessageNone, vfdLevel3: level3, vfdOverlay: vfdOverlayNone, vfdTickPeriod: 10, vfdTempTick: 0,
 	}}
+	if level3 != vfdLevel3StandbyBlank {
+		f.mem[barPowerFlag] = 1 // on
+	}
 	f.render()
 	return f
 }
@@ -113,6 +116,7 @@ func (m fakeDisplayMem) write32(a int64, v uint32) error {
 }
 func (m fakeDisplayMem) writeText(t string) error { m.f.text = t; m.f.render(); return nil }
 func (m fakeDisplayMem) keyDown() (bool, error)   { return m.f.mem[vfdKeyFlag] != 0, nil }
+func (m fakeDisplayMem) awake() (bool, error)     { return m.f.mem[barPowerFlag] == 1, nil }
 func (m fakeDisplayMem) tick() (uint32, error) {
 	return uint32(m.f.now().Sub(m.f.origin).Milliseconds() / 10), nil
 }
@@ -225,6 +229,7 @@ func TestDisplayParameters(t *testing.T) {
 		`{"text":"frigo","id":"fridge","repeat":4}`:    {ID: "fridge", Text: "FRIGO", Mode: displayPasses, Passes: 4},
 		`{"text":"frigo","duration_s":300}`:            {ID: "default", Text: "FRIGO", Mode: displayUntil, Passes: 1, For: 5 * time.Minute},
 		`{"text":"frigo","forever":true,"id":"a_b-1"}`: {ID: "a_b-1", Text: "FRIGO", Mode: displayForever, Passes: 1},
+		`{"text":"frigo","when_on":true}`:              {ID: "default", Text: "FRIGO", Mode: displayPasses, Passes: 1, WhenOn: true},
 	}
 	for in, want := range good {
 		got, err := parseDisplayShow(json.RawMessage(in))
@@ -546,5 +551,79 @@ func TestDisplayMessageClearedByAKey(t *testing.T) {
 	time.Sleep(time.Second / displayScale)
 	if len(m.List()) != 1 {
 		t.Fatal("a key cleared a message without the option")
+	}
+}
+
+// wake turns the fake bar on: the power, then its own screen goes.
+func wake(f *fakeDisplay) {
+	f.set(barPowerFlag, 1)
+	f.set(vfdLevel3, vfdLevel3None)
+}
+
+// A message for when the bar is on waits while it is in standby, out of the
+// line: the clock may show and other messages go first. It shows once the bar
+// is on, its duration counted from then.
+func TestDisplayWhenOnWaitsForTheBar(t *testing.T) {
+	f, m, stop := startDisplay(t, vfdLevel3StandbyBlank)
+	defer stop()
+	show(t, m, `{"text":"vu","id":"vu","when_on":true,"duration_s":60}`)
+	time.Sleep(5 * time.Second / displayScale)
+	if got := strings.Join(f.screens(), "|"); strings.Contains(got, "VU") {
+		t.Fatalf("shown in standby: %v", got)
+	}
+	l := m.List()
+	if len(l) != 1 || !l[0].WhenOn || !l[0].Held || l[0].Showing || l[0].RemainingMS != 60000 {
+		t.Fatalf("list %+v", l)
+	}
+	if !m.idle() {
+		t.Fatal("a held message keeps the clock away")
+	}
+	// Another message is not held up by it.
+	show(t, m, `{"text":"colis","id":"colis"}`)
+	waitScreen(t, f, "text:COLIS", 10*time.Second)
+	waitFor(t, 30*time.Second, func() bool { l := m.List(); return len(l) == 1 && l[0].ID == "vu" })
+
+	time.Sleep(90 * time.Second / displayScale) // longer than its duration: it has not started
+	wake(f)
+	waitScreen(t, f, "text:VU", 10*time.Second)
+	l = m.List()
+	if len(l) != 1 || l[0].Held || !l[0].Showing || l[0].RemainingMS < 50000 {
+		t.Fatalf("list %+v", l)
+	}
+	if f.read(vfdLevel3) != vfdLevel3None {
+		t.Fatal("level 3 touched with the bar on")
+	}
+}
+
+// With the bar on, it shows at once, like any message.
+func TestDisplayWhenOnShowsAtOnceWhenOn(t *testing.T) {
+	f, m, stop := startDisplay(t, vfdLevel3None)
+	defer stop()
+	show(t, m, `{"text":"vu","when_on":true}`)
+	waitScreen(t, f, "text:VU", 3*time.Second)
+	waitIdle(t, f, m, time.Minute)
+}
+
+// Replaced or cleared while held, it never shows.
+func TestDisplayWhenOnReplacedOrCleared(t *testing.T) {
+	f, m, stop := startDisplay(t, vfdLevel3StandbyBlank)
+	defer stop()
+	show(t, m, `{"text":"un","id":"a","when_on":true}`)
+	show(t, m, `{"text":"deux","id":"a","when_on":true}`)
+	show(t, m, `{"text":"trois","id":"b","when_on":true}`)
+	waitFor(t, 10*time.Second, func() bool { return len(m.List()) == 2 })
+	m.Cancel("b")
+	waitFor(t, 10*time.Second, func() bool { return len(m.List()) == 1 })
+	// Replaced by a message for now: it shows in standby.
+	show(t, m, `{"text":"quatre","id":"a"}`)
+	waitScreen(t, f, "text:QUATRE", 10*time.Second)
+	waitIdle(t, f, m, time.Minute)
+	if got := strings.Join(f.screens(), "|"); strings.Contains(got, "UN") || strings.Contains(got, "DEUX") || strings.Contains(got, "TROIS") {
+		t.Fatalf("a held message showed: %v", got)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.held) != 0 || len(m.queue) != 0 {
+		t.Fatalf("left over: held %d, queue %d", len(m.held), len(m.queue))
 	}
 }

@@ -213,7 +213,7 @@ function success(action, s) {
   if (action === 'timer_start') return 'Timer started.';
   if (action === 'timer_cancel') return 'Timer stopped.';
   if (action === 'timer_extend') return 'Time added.';
-  if (action === 'display_message') return 'Message sent to the bar.';
+  if (action === 'display_message') return (s.extensions?.['bar91.display-message']?.messages || []).some(m => m.held) ? 'Message kept for when the bar is turned on.' : 'Message sent to the bar.';
   if (action === 'display_cancel') return 'Message cleared.';
   if (action === 'reboot') return 'The soundbar is restarting. This page reconnects by itself.';
   if (action === 'display_clock') { const c = s.extensions?.['bar91.display-clock']; return !c?.enabled ? 'Clock off.' : c.when === 'always' ? 'Clock on, in standby and with the bar on.' : 'Clock on, in standby.'; }

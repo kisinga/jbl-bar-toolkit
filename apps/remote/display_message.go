@@ -46,6 +46,7 @@ const (
 	displayMaxTime  = 24 * time.Hour
 	displayReleaseT = 5 * time.Second
 	displayKeyPoll  = 100 * time.Millisecond // a key press shows on vfdKeyFlag for ~0.1-0.5 s
+	displayHoldPoll = time.Second            // how often a message held for the bar to be on looks
 )
 
 var (
@@ -107,7 +108,11 @@ type displayRequest struct {
 	Mode     displayMode
 	Passes   int
 	For      time.Duration
-	Hooks    *displayHooks // nil for plain messages
+	// WhenOn holds the message while the bar is in standby: it shows once
+	// the bar is on (at once if it is), so that someone using the bar sees
+	// it. Its duration counts from then.
+	WhenOn bool
+	Hooks  *displayHooks // nil for plain messages
 }
 
 // displayHooks extend a message for features built on it (timers).
@@ -140,6 +145,8 @@ func parseDisplayShow(data json.RawMessage) (displayRequest, error) {
 		// StopOnKey: the message goes away when someone presses a key on
 		// the JBL remote, as a sign it was seen (like a timer's alarm).
 		StopOnKey bool `json:"stop_on_key"`
+		// WhenOn: shown once the bar is on, not in standby.
+		WhenOn bool `json:"when_on"`
 	}
 	if err := extensionParameters(data, &p); err != nil {
 		return displayRequest{}, err
@@ -148,7 +155,7 @@ func parseDisplayShow(data json.RawMessage) (displayRequest, error) {
 	if err != nil {
 		return displayRequest{}, err
 	}
-	r := displayRequest{ID: p.ID, Text: text, Mode: displayPasses, Passes: 1}
+	r := displayRequest{ID: p.ID, Text: text, Mode: displayPasses, Passes: 1, WhenOn: p.WhenOn}
 	if r.ID == "" {
 		r.ID = displayDefaultID
 	}
@@ -208,6 +215,8 @@ type displayMem interface {
 	tick() (uint32, error)
 	// keyDown reports whether a key of the bar's remote is pressed now.
 	keyDown() (bool, error)
+	// awake reports whether the bar is on (not in standby).
+	awake() (bool, error)
 }
 
 // displayPort gives exclusive native access for one short step, and the clock.
@@ -234,6 +243,7 @@ type displayJob struct {
 	armed  bool   // StopOnKey: the key flag was seen released since the last gap
 	reason string // why the message ended, for Hooks.Done
 	shown  string // text on screen (Live)
+	held   bool   // WhenOn: waiting for the bar to be on, out of the line
 }
 
 func (job *displayJob) hooks() displayHooks {
@@ -252,6 +262,7 @@ type displayManager struct {
 	root    context.Context
 	jobs    map[string]*displayJob
 	queue   []*displayJob // waiting for the display, in order
+	held    []*displayJob // WhenOn, waiting for the bar to be on: not in line yet
 	owner   *displayJob
 	changed chan struct{}
 	running sync.WaitGroup
@@ -285,26 +296,44 @@ func (m *displayManager) Show(r displayRequest) error {
 	if m.root == nil || m.root.Err() != nil {
 		return errors.New("display messages are not running")
 	}
-	job := &displayJob{req: r, done: make(chan struct{}), start: m.port.now()}
+	job := &displayJob{req: r, done: make(chan struct{}), start: m.port.now(), held: r.WhenOn}
 	job.ctx, job.cancel = context.WithCancel(m.root)
 	position := len(m.queue)
 	if old := m.jobs[r.ID]; old != nil {
 		old.cancel()
-		position = 0 // the replaced one was showing: next in line
-		for i, q := range m.queue {
-			if q == old {
-				position = i
-				m.queue = append(m.queue[:i], m.queue[i+1:]...)
-				break
+		if old.held {
+			m.held = removeJob(m.held, old)
+		} else {
+			position = 0 // the replaced one was showing: next in line
+			for i, q := range m.queue {
+				if q == old {
+					position = i
+					m.queue = append(m.queue[:i], m.queue[i+1:]...)
+					break
+				}
 			}
 		}
 	}
-	m.queue = append(m.queue[:position], append([]*displayJob{job}, m.queue[position:]...)...)
+	if job.held {
+		// In line only once the bar is on (hold): other messages go first.
+		m.held = append(m.held, job)
+	} else {
+		m.queue = append(m.queue[:position], append([]*displayJob{job}, m.queue[position:]...)...)
+	}
 	m.jobs[r.ID] = job
 	m.notifyLocked()
 	m.running.Add(1)
 	go m.run(job)
 	return nil
+}
+
+func removeJob(jobs []*displayJob, job *displayJob) []*displayJob {
+	for i, q := range jobs {
+		if q == job {
+			return append(jobs[:i], jobs[i+1:]...)
+		}
+	}
+	return jobs
 }
 
 // displayDefaultID is the id of a message sent without one: there is one at
@@ -321,6 +350,8 @@ type displayStatus struct {
 	RemainingMS int64  `json:"remaining_ms,omitempty"` // duration mode, as of this state
 	Showing     bool   `json:"showing"`                // false: waiting for its turn or a free display
 	StopOnKey   bool   `json:"stop_on_key"`            // a key on the JBL remote clears it
+	WhenOn      bool   `json:"when_on"`                // shown once the bar is on
+	Held        bool   `json:"held"`                   // when_on: the bar is in standby, the message waits for it
 }
 
 // displayInternal tells the messages of features built on the display
@@ -331,13 +362,13 @@ func displayInternal(id string) bool {
 }
 
 // List gives the messages sent through display_message, the one showing
-// first, then the others in line.
+// first, then the others in line, then those waiting for the bar to be on.
 func (m *displayManager) List() []displayStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	jobs := m.queue
+	jobs := append(append([]*displayJob{}, m.queue...), m.held...)
 	if m.owner != nil {
-		jobs = append([]*displayJob{m.owner}, m.queue...)
+		jobs = append([]*displayJob{m.owner}, jobs...)
 	}
 	now := m.port.now()
 	list := []displayStatus{}
@@ -346,13 +377,17 @@ func (m *displayManager) List() []displayStatus {
 		if displayInternal(r.ID) || m.jobs[r.ID] != job || job.ctx.Err() != nil {
 			continue
 		}
-		s := displayStatus{ID: r.ID, Named: r.ID != displayDefaultID, Text: r.Text, Showing: job == m.owner, StopOnKey: job.hooks().StopOnKey}
+		s := displayStatus{ID: r.ID, Named: r.ID != displayDefaultID, Text: r.Text, Showing: job == m.owner, StopOnKey: job.hooks().StopOnKey,
+			WhenOn: r.WhenOn, Held: job.held}
 		switch r.Mode {
 		case displayForever:
 			s.Mode = "forever"
 		case displayUntil:
 			s.Mode = "duration"
 			s.RemainingMS = max(0, job.start.Add(r.For).Sub(now).Milliseconds())
+			if job.held {
+				s.RemainingMS = r.For.Milliseconds() // counts from when the bar is on
+			}
 		default:
 			s.Mode = "passes"
 			s.PassesLeft = max(0, r.Passes-job.pass)
@@ -421,11 +456,13 @@ func (m *displayManager) yield(job *displayJob) {
 	m.mu.Unlock()
 }
 
-// idle reports whether no message or timer of ours shows or waits (the clock's turn).
+// idle reports whether no message or timer of ours shows or waits (the clock's
+// turn). A message held for the bar to be on does not count: in standby the
+// clock shows meanwhile.
 func (m *displayManager) idle() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.owner == nil && len(m.queue) == 0 && len(m.jobs) == 0
+	return m.owner == nil && len(m.queue) == 0 && len(m.jobs) == len(m.held)
 }
 
 // changedChan is closed at the next change of the messages (a new one, an end).
@@ -447,12 +484,8 @@ func (m *displayManager) finish(job *displayJob) {
 	if m.owner == job {
 		m.owner = nil
 	}
-	for i, q := range m.queue {
-		if q == job {
-			m.queue = append(m.queue[:i], m.queue[i+1:]...)
-			break
-		}
-	}
+	m.queue = removeJob(m.queue, job)
+	m.held = removeJob(m.held, job)
 	if m.jobs[job.req.ID] == job {
 		delete(m.jobs, job.req.ID)
 	}
@@ -753,6 +786,38 @@ func (m *displayManager) show(job *displayJob, text string, d time.Duration) err
 	return nil
 }
 
+// hold waits, out of the line, until the bar is on, then puts job at the end
+// of the line; its duration counts from then.
+func (m *displayManager) hold(job *displayJob) error {
+	for {
+		awake := false
+		err := m.port.step(false, func(mem displayMem) error {
+			var e error
+			awake, e = mem.awake()
+			return e
+		})
+		if err != nil && err != errDisplayGate {
+			m.logf("Display message %s: bar state unreadable: %v", job.req.ID, err)
+		}
+		if err == nil && awake {
+			m.mu.Lock()
+			if !job.held {
+				m.mu.Unlock()
+				return nil
+			}
+			m.held = removeJob(m.held, job)
+			job.held, job.start = false, m.port.now()
+			m.queue = append(m.queue, job)
+			m.notifyLocked()
+			m.mu.Unlock()
+			return nil
+		}
+		if m.port.sleep(job.ctx, displayHoldPoll) != nil {
+			return errDisplayStopped
+		}
+	}
+}
+
 func (m *displayManager) run(job *displayJob) {
 	defer m.finish(job)
 	r := job.req
@@ -769,6 +834,15 @@ func (m *displayManager) run(job *displayJob) {
 		default:
 			job.reason = "error"
 			m.logf("Display message %s: stopped: %v", r.ID, err)
+		}
+	}
+	m.mu.Lock()
+	held := job.held
+	m.mu.Unlock()
+	if held {
+		if err := m.hold(job); err != nil {
+			end(err)
+			return
 		}
 	}
 	if err := m.acquire(job, m.budget(job)); err != nil {

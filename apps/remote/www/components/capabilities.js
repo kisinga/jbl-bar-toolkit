@@ -24,7 +24,7 @@ export function createCapabilities(root) {
       if(feature.component==='bass-offset') value.bass_offset=projected;
       if(feature.component==='front-eq') value.eq=projected;
       if(feature.component==='timer') value.timers=projected.timers;
-      if(feature.component==='messages') value.messages=projected.messages;
+      if(feature.component==='messages') { value.messages=projected.messages; value.message_options=projected.options||[]; }
       if(feature.component==='display-clock') value.display_clock=projected;
       if(feature.component==='center-level') value.sound={...value.sound,center:projected.level,center_error:projected.error};
     }
