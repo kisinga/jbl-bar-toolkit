@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -969,6 +970,109 @@ for label, (tcp, tcp6, ssh, owner, reason) in port_cases.items():
         if reason is not None:
             assert result.stdout.decode().strip() == reason, (label, result.stdout)
         passed('ssh_port_preflight_' + label)
+
+# Boot dispatcher order: a web remote that fails at boot must not keep SSH,
+# the network repair path, from starting; its failure is still reported.
+boot_stub = '''BB=$JBL_FIXTURE/bb
+USB=$JBL_FIXTURE/usb
+LOCK=$JBL_FIXTURE/lock
+REMOTE_STORE=$JBL_FIXTURE/remote
+SSH_STORE=$JBL_FIXTURE/ssh
+release_sockets() { :; }
+owned() { :; }
+regular() { [ -f "$1" ] && [ ! -L "$1" ]; }
+marker() { : > "$1"; }
+boot_id() { echo fixture-boot; }
+runtime_integrity() { :; }
+remote_ready() { [ -f "$JBL_FIXTURE/remote-ready" ]; }
+process_owned() { [ "$1" = "$SSH_STORE/sshd.pid" ] && [ -f "$JBL_FIXTURE/ssh-started" ]; }
+'''
+for label, remote_start, ssh_boot, status, ssh_started in (
+    ('remote_start_failed', 'exit 1', 'ok', 'BOOT_REMOTE_START_FAILED', True),
+    ('remote_not_ready', 'exit 0', 'ok', 'BOOT_REMOTE_NOT_READY', True),
+    ('remote_and_ssh_failed', 'exit 1', 'fail', 'BOOT_SSH_START_FAILED', False),
+    ('both_ready', ': > "$JBL_FIXTURE/remote-ready"', 'ok', 'BOOT_SERVICES_READY', True),
+):
+    with tempfile.TemporaryDirectory(prefix='jbl-boot-order-') as temp:
+        folder = Path(temp)
+        store = folder / 'store'
+        for name in ('store', 'remote', 'ssh', 'usb'):
+            (folder / name).mkdir()
+        # Real BusyBox, except that the bounded readiness wait does not sleep.
+        (folder / 'bb').write_text('#!/bin/sh\n[ "$1" = sleep ] && exit 0\nexec ' + BB + ' "$@"\n')
+        (folder / 'bb').chmod(0o700)
+        (store / 'boot.sh').write_text((ROOT / 'models/bar91/usb/boot.sh').read_text())
+        (store / 'common.sh').write_text(boot_stub)
+        (store / 'parse-config.awk').write_text('BEGIN { print "WEB_REMOTE=true"; print "AUTO_STANDARD=false"; print "SSH=true" }\n')
+        (store / 'config.txt').write_text('')
+        (folder / 'remote/start.sh').write_text(remote_start + '\n')
+        (folder / 'ssh/boot.sh').write_text(': > "$JBL_FIXTURE/ssh-started"\n' if ssh_boot == 'ok' else 'exit 1\n')
+        env = dict(os.environ, JBL_TOOLKIT_STORE=str(store), JBL_FIXTURE=str(folder))
+        subprocess.run([BB, 'sh', str(store / 'boot.sh')], env=env, timeout=20)
+        assert (store / 'BOOT_STATUS.txt').read_text().strip() == status, (label, (store / 'BOOT_STATUS.txt').read_text())
+        assert (folder / 'ssh-started').exists() == ssh_started, label
+        if status.startswith('BOOT_REMOTE_') or label == 'remote_and_ssh_failed':
+            assert ('BOOT_REMOTE_START_FAILED' if remote_start == 'exit 1' else 'BOOT_REMOTE_NOT_READY') in (store / 'boot.log').read_text(), label
+        assert not (folder / 'lock').exists(), label
+        passed('boot_order_' + label)
+
+# Web remote start: remote.pid survives reboots, so a stale record (foreign
+# live PID, dead PID, empty or damaged file) is replaced, never signalled;
+# only a live remote with the exact command line counts as running.
+for label in ('missing', 'empty', 'damaged', 'dead', 'foreign_live', 'running_remote'):
+    with tempfile.TemporaryDirectory(prefix='jbl-remote-start-') as temp:
+        folder = Path(temp)
+        store = folder / 'remote'
+        store.mkdir()
+        source = (ROOT / 'models/bar91/remote/start.sh').read_text()
+        for old, new in (('BB=/bin/busybox', 'BB=' + BB), ('/var/JBLRemote', str(store)),
+                         ('/tmp/jbl-web-start-lock', str(folder / 'lock'))):
+            assert old in source, old
+            source = source.replace(old, new)
+        (store / 'start.sh').write_text(source)
+        (store / 'OWNER.txt').write_text('JBL_WEB_REMOTE_REV1\n')
+        (store / 'config.json').write_text('{}\n')
+        (store / 'remote').write_text('#!/bin/sh\nprintf "started\\n" >> "$(dirname "$0")/started"\nexec sleep 30\n')
+        (store / 'remote').chmod(0o700)
+        other = None
+        if label == 'empty':
+            (store / 'remote.pid').write_text('')
+        elif label == 'damaged':
+            (store / 'remote.pid').write_bytes(b'\x00\x00')
+        elif label == 'dead':
+            finished = subprocess.Popen(['true'])
+            finished.wait()
+            (store / 'remote.pid').write_text(str(finished.pid) + '\n')
+        elif label == 'foreign_live':
+            other = subprocess.Popen(['sleep', '30'])
+            (store / 'remote.pid').write_text(str(other.pid) + '\n')
+        elif label == 'running_remote':
+            argv0 = str(store) + '/remote -config ' + str(store) + '/config.json -ready-file x'
+            other = subprocess.Popen([argv0, '30'], executable=shutil.which('sleep'))
+            (store / 'remote.pid').write_text(str(other.pid) + '\n')
+        before = (store / 'remote.pid').read_bytes() if (store / 'remote.pid').exists() else None
+        try:
+            result = subprocess.run([BB, 'sh', str(store / 'start.sh')], timeout=10)
+            assert result.returncode == 0, label
+            if label == 'running_remote':
+                assert not (store / 'started').exists() and (store / 'remote.pid').read_bytes() == before
+            else:
+                for _ in range(50):
+                    if (store / 'started').exists():
+                        break
+                    time.sleep(0.1)
+                assert (store / 'started').read_text() == 'started\n', label
+                started = int((store / 'remote.pid').read_text())
+                assert (store / 'remote.pid').read_bytes() != before
+                os.kill(started, signal.SIGTERM)
+            if other is not None:
+                assert other.poll() is None, label + ': an unrelated process was signalled'
+            assert not (folder / 'lock').exists(), label
+        finally:
+            if other is not None:
+                other.kill()
+                other.wait()
+        passed('remote_start_pid_' + label)
 
 for script in (ROOT / 'models/bar91/usb').glob('*.sh'):
     subprocess.run([BB, 'sh', '-n', str(script)], check=True)

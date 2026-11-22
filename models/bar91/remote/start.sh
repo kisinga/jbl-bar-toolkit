@@ -16,13 +16,19 @@ STORE=/var/JBLRemote
 [ ! -e "$STORE/DISABLED" ] || exit 0
 "$BB" mkdir /tmp/jbl-web-start-lock 2>/dev/null || exit 0
 trap '"$BB" rmdir /tmp/jbl-web-start-lock' EXIT
+# remote.pid survives reboots and power loss, so its number may now belong to
+# any process, or the file may be empty. Only a live remote with this exact
+# command line means it is already running; any other record is stale and is
+# replaced. Nothing is ever signalled here.
 if [ -f "$STORE/remote.pid" ]; then
-    pid=$("$BB" cat "$STORE/remote.pid")
-    case "$pid" in ''|*[!0-9]*) exit 1;; esac
-    if kill -0 "$pid" 2>/dev/null; then
-        cmd=$("$BB" tr '\000' ' ' < "/proc/$pid/cmdline")
-        case "$cmd" in "$STORE/remote -config $STORE/config.json "*) exit 0;; *) exit 1;; esac
-    fi
+    pid=$("$BB" cat "$STORE/remote.pid" 2>/dev/null)
+    case "$pid" in
+        ''|*[!0-9]*) ;;
+        *) if kill -0 "$pid" 2>/dev/null; then
+               cmd=$("$BB" tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+               case "$cmd" in "$STORE/remote -config $STORE/config.json "*) exit 0;; esac
+           fi;;
+    esac
 fi
 [ ! -f "$STORE/remote.log" ] || "$BB" mv "$STORE/remote.log" "$STORE/remote-previous.log"
 # The remote moves a full remote.log to remote.log.1 (log_rotate.go): keep the

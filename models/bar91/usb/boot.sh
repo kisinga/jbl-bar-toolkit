@@ -24,19 +24,27 @@ printf 'BOOT_STARTING\n' > "$STORE/BOOT_STATUS.txt"
 runtime_integrity || finish BOOT_RUNTIME_INTEGRITY_FAILED 1
 "$BB" awk -f "$STORE/parse-config.awk" "$STORE/config.txt" > "$LOCK/plan" || exit 1
 . "$LOCK/plan" || exit 1
+# A web remote that fails to start must not cost SSH, the network path for
+# diagnosis and repair: record the failure, start SSH, then report it.
+remote_failure=
 if [ "$WEB_REMOTE" = true ] || [ "$AUTO_STANDARD" = true ]; then
-    /bin/sh "$REMOTE_STORE/start.sh" || finish BOOT_REMOTE_START_FAILED 1
-    count=0
-    while ! remote_ready; do
-        [ "$count" -lt 15 ] || finish BOOT_REMOTE_NOT_READY 1
-        "$BB" sleep 1; count=$((count+1))
-    done
+    if /bin/sh "$REMOTE_STORE/start.sh"; then
+        count=0
+        while ! remote_ready; do
+            [ "$count" -lt 15 ] || { remote_failure=BOOT_REMOTE_NOT_READY; break; }
+            "$BB" sleep 1; count=$((count+1))
+        done
+    else
+        remote_failure=BOOT_REMOTE_START_FAILED
+    fi
+    [ -z "$remote_failure" ] || printf '%s\n' "$remote_failure"
 fi
 if [ "$SSH" = true ]; then
     # Retain the shared lock through SSH's bounded network/startup wait.
     /bin/sh "$SSH_STORE/boot.sh" || finish BOOT_SSH_START_FAILED 1
     process_owned "$SSH_STORE/sshd.pid" "" ssh || finish BOOT_SSH_NOT_READY 1
 fi
+[ -z "$remote_failure" ] || finish "$remote_failure" 1
 if [ "$WEB_REMOTE" = true ] || [ "$AUTO_STANDARD" = true ]; then
     remote_ready || finish BOOT_REMOTE_EXITED 1
 fi

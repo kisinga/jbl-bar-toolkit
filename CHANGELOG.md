@@ -6,6 +6,9 @@ generated from that section plus the installation and recovery instructions.
 
 ## Unreleased
 
+- Start SSH at boot even when the web remote fails to start, so the bar stays reachable for repair; the boot status still reports the remote failure.
+- Start the web remote when `remote.pid` is stale after a reboot or power loss (the number now belongs to another process, or the file is empty) instead of failing the boot.
+- Explain the boot integrity check in the USB guide: hand-edited toolkit files stop the next boot (`BOOT_RUNTIME_INTEGRITY_FAILED`), and `action=configure` repairs it.
 - Keep SSH reachable when the soundbar changes its network address after startup, such as releasing Wi-Fi for Ethernet during boot or when a cable is connected later.
 - Run common shell commands such as `cat`, `dd`, `awk`, `date` and `clear` in SSH sessions through BusyBox instead of crashing with `Segmentation fault`, while the bar's own utilities keep precedence; `reboot`, `poweroff` and `halt` stay with the firmware.
 
