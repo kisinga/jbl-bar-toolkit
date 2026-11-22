@@ -585,6 +585,34 @@ exit 0
                     assert (remote / 'remote.pid').read_bytes() == pid_before
                     (usb / 'RECOVER').touch()
                     assert launch()[1] == 'RECOVERED_REBOOT_REQUIRED'
+                elif label in ('different_package_update_then_configure', 'different_package_recover_then_update'):
+                    # The original USB and recovery ZIP are gone; only a newer package exists.
+                    (usb / 'VERSION.txt').write_text('different package\n')
+                    manifest()
+                    for refused in ('install', 'configure'):
+                        (usb / 'config.txt').write_bytes(changed(action=refused, ssh='false', web_remote='false', auto_standard='false'))
+                        result, status = launch()
+                        assert result.returncode != 0 and status == 'PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB'
+                    if label == 'different_package_recover_then_update':
+                        # Recovery needs no package match; it only disables the toolkit.
+                        (usb / 'RECOVER').touch()
+                        result, status = launch()
+                        assert result.returncode == 0 and status == 'RECOVERED_REBOOT_REQUIRED', (status, (usb / 'setup.log').read_text())
+                        assert hook.read_bytes() == original and (store / 'DISABLED').exists()
+                        (usb / 'RECOVER').unlink()
+                    # Update adopts the new package and keeps the stored settings.
+                    (usb / 'config.txt').write_bytes(changed(action='update', ssh='false', web_remote='false', auto_standard='false'))
+                    result, status = launch()
+                    assert result.returncode == 0 and status == 'INSTALLED_PENDING_REBOOT_TEST', (status, (usb / 'setup.log').read_text())
+                    assert (store / 'package.manifest').read_bytes() == (usb / 'SHA256SUMS').read_bytes()
+                    assert not (store / 'DISABLED').exists() and hook.read_bytes() == managed
+                    # The new package now matches, so settings can change again.
+                    (usb / 'config.txt').write_bytes(changed(action='configure', ssh='false'))
+                    result, status = launch()
+                    assert result.returncode == 0 and status == 'INSTALLED_PENDING_REBOOT_TEST', (status, (usb / 'setup.log').read_text())
+                    (usb / 'RECOVER').touch()
+                    assert launch()[1] == 'RECOVERED_REBOOT_REQUIRED'
+                    assert hook.read_bytes() == original
                 elif label.startswith('changed_hook_'):
                     hook.write_bytes(managed + b'\r\n# external change\r\n')
                     (usb / 'RECOVER').touch()
@@ -659,6 +687,8 @@ exit 0
     scenario('web_only', config=changed(ssh='false', auto_standard='false'))
     scenario('all_features_initially_disabled', config=changed(ssh='false', web_remote='false', auto_standard='false'))
     scenario('different_package_refused_without_service_changes')
+    scenario('different_package_update_then_configure')
+    scenario('different_package_recover_then_update')
     scenario('changed_hook_recovery_preserves_external_bytes')
     scenario('changed_hook_originally_absent_preserves_external_bytes', hook_present=False)
     scenario('emergency_recovery_ignores_broken_config_and_payload')

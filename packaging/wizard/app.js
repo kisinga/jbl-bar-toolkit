@@ -67,7 +67,7 @@
       CHECK_BLOCKED_READ_CHECKS: [null, "Compatibility check blocked. Read the technical details and resolve the reported cause before installing."],
       VERIFICATION_INCOMPLETE_READ_VERIFY: ["verify", "Restart verification is incomplete. Read VERIFY.txt below and resolve its reported checks before preparing verification again."],
       RECOVERED_REBOOT_REQUIRED: [null, "Toolkit disabled and recovery completed. Remove the USB and restart the bar."],
-      PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB: [null, "This package does not match the bar. Restore the original USB backup or use the matching recovery ZIP."],
+      PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB: ["update", "This package is not the one installed on the bar. Nothing was changed. Choose Install / update everything to move the bar to this package and keep its settings, then apply configuration changes. To switch the toolkit off instead, choose Uninstall; neither needs the original USB or recovery ZIP."],
       BOOTSTRAP_FILE_MISSING_OR_UNSAFE: [null, "Required USB files are missing or unsafe. Restore the original USB backup; do not delete recover.sh."],
       LEGACY_INSTALLATION_REQUIRES_FRESH_SETUP: [null, "An older standalone installation was found. Remove it using the older-installation guide, restart the bar, then install fresh."],
       REINSTALL_IDENTITY_FAILED_NO_CHANGES: [null, "The older setup was not recognized. Nothing was removed. Use the older-installation guide and keep the original files."],
@@ -90,7 +90,7 @@
     $("guidance-text").textContent = text;
     $("legacy-help").hidden = !replaceable && !status.startsWith("REINSTALL_") && status !== "LEGACY_INSTALLATION_REQUIRES_FRESH_SETUP" && !(reports["CHECKS.txt"] || "").includes("LEGACY_INSTALLATION_REQUIRES_FRESH_SETUP");
     $("use-recommendation").hidden = !recommendation;
-    $("recover-recommendation").hidden = status !== "TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER";
+    $("recover-recommendation").hidden = !["TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER", "PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB"].includes(status);
     if (recommendation) {
       const option = [...$("action").options].find(o => o.value === recommendation);
       $("use-recommendation").textContent = "Next: " + option.textContent.trim();

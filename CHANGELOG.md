@@ -6,6 +6,7 @@ generated from that section plus the installation and recovery instructions.
 
 ## Unreleased
 
+- Explain how to get out of `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB` without the original USB or recovery ZIP: **Install / update everything** adopts a newer package and keeps settings, and **Uninstall** or a `RECOVER` marker works with any package. Setup now recommends both when it reads that status.
 - Start SSH at boot even when the web remote fails to start, so the bar stays reachable for repair; the boot status still reports the remote failure.
 - Start the web remote when `remote.pid` is stale after a reboot or power loss (the number now belongs to another process, or the file is empty) instead of failing the boot.
 - Explain the boot integrity check in the USB guide: hand-edited toolkit files stop the next boot (`BOOT_RUNTIME_INTEGRITY_FAILED`), and `action=configure` repairs it.
