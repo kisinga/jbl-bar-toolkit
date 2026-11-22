@@ -32,6 +32,7 @@ export_logs() {
     done
     [ ! -f "$SSH_STORE/BOOT_STATUS.txt" ] || atomic_copy "$SSH_STORE/BOOT_STATUS.txt" "$USB/logs/ssh-BOOT_STATUS.txt" || return 1
     [ ! -f "$REMOTE_STORE/remote.log" ] || atomic_copy "$REMOTE_STORE/remote.log" "$USB/logs/remote.log" || return 1
+    [ ! -f "$REMOTE_STORE/remote.log.1" ] || atomic_copy "$REMOTE_STORE/remote.log.1" "$USB/logs/remote.log.1" || return 1
 }
 (cd "$USB" && "$BB" sha256sum -c SHA256SUMS) >/dev/null 2>&1 || finish PACKAGE_INTEGRITY_FAILED 1
 "$BB" awk -f "$USB/parse-config.awk" "$USB/config.txt" > "$LOCK/plan" || finish CONFIG_INVALID 1

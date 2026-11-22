@@ -916,6 +916,7 @@ func main() {
 		}
 		return
 	}
+	startLogRotation() // the service: remote.log is capped from here on
 	b, e := os.ReadFile(*path)
 	if e != nil {
 		log.Fatal(e)
