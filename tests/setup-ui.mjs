@@ -195,6 +195,7 @@ try {
     ["INSTALLED_PENDING_REBOOT_TEST", "verify"],
     ["WIFI_SETUP_INCOMPLETE", "configure"],
     ["TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER", "configure"],
+    ["PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB", "update"],
   ]) {
     reportStatus = status;
     await page.locator("#refresh").click();
@@ -202,6 +203,8 @@ try {
     if (await page.locator("#use-recommendation").isVisible()) await page.locator("#use-recommendation").click();
     assert.equal(await page.locator("#action").inputValue(), action);
   }
+  // The conflict status offers recovery too: no original USB or ZIP is needed.
+  assert.equal(await page.locator("#recover-recommendation").isVisible(), true);
   await page.locator("#recover-recommendation").click();
   assert.equal(await page.locator("#action").inputValue(), "uninstall");
   reportStatus = "UNRECOGNIZED_FAILURE";

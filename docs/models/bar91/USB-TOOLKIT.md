@@ -270,7 +270,9 @@ exact files you started with.
 - Copy everything on the prepared USB, including the whole `JBLToolkit` folder, to a
   folder on your computer. Keep the recovery ZIP next to it. Configure and recovery
   need this exact package; a newly prepared USB is a different package and is
-  refused with `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB`.
+  refused with `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB`. Update and recovery do
+  not, so losing the package is recoverable (see
+  [Lost the original USB and recovery ZIP](#lost-the-original-usb-and-recovery-zip)).
 - Don't delete or rename files in `JBLToolkit`. Windows hides file extensions by
   default, so `recover.sh` shows up as **recover**. It is a required script, not the
   `RECOVER` marker described under [Recovery](#recovery). Without it the USB stops at
@@ -293,12 +295,31 @@ exact files you started with.
 | You see | What it means |
 | --- | --- |
 | `TOOLKIT_DISABLED_USE_CONFIGURE_OR_RECOVER` | An earlier attempt failed and left the toolkit disabled. Use configure or recovery with the same package. |
-| `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB` | The USB holds a different package from the one on the bar. Restore your copy of the original USB. |
+| `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB` | The USB holds a different package from the one on the bar, and nothing was changed. Restore the original USB, or run **Install / update everything** (`action=update`) with this package, or recover with it. See [Lost the original USB and recovery ZIP](#lost-the-original-usb-and-recovery-zip). |
 | `BOOTSTRAP_FILE_MISSING_OR_UNSAFE` | `dispatch.sh`, `launch.sh`, `common.sh`, `recover.sh` or `BOOTSTRAP.SHA256SUMS` is missing from `JBLToolkit`. Restore your copy of the original USB. |
 
-If the original package is lost, run recovery from the matching recovery ZIP and ask
-in an [issue](https://github.com/kisinga/jbl-bar-toolkit/issues) before trying again.
-Don't remove `/var/JBLToolkit` by hand to force a fresh install.
+### Lost the original USB and recovery ZIP
+
+Only `install`, `configure` and `reinstall` compare the USB with the package recorded
+on the bar. `update`, `uninstall` and the `RECOVER` marker do not, so any copy of this
+toolkit, including a newer one, can get you out. Don't remove `/var/JBLToolkit` by hand
+to force a fresh install.
+
+1. Prepare a USB with the toolkit version you want, then choose **Install / update
+   everything** (`action=update`). The bar adopts this package and keeps its stored
+   settings, admin password and tuning. Wi-Fi is not changed by an update.
+2. Once the update reports `INSTALLED_PENDING_REBOOT_TEST`, the package matches, so
+   **Apply configuration changes** (`action=configure`) now works, for example to
+   change the Wi-Fi network.
+3. If an update is refused, or you only want the toolkit off, recover with any
+   package: choose **Uninstall**, or put an empty `JBLToolkit/RECOVER` file on the USB.
+   Restart the bar, then run step 1 and step 2. Recovery restores the original startup
+   hook and leaves the toolkit disabled; a following update re-enables it.
+4. If neither works, open an [issue](https://github.com/kisinga/jbl-bar-toolkit/issues)
+   with `STATUS.txt`, `setup.log` and `DIAGNOSTICS.txt` from the USB.
+
+The setup app marks a USB holding a `RECOVER` file as unusable for installation. Use a
+second, clean USB for the update.
 
 Toolkit-managed components have `TOOLKIT` markers. Their standalone web installers and SSH hook tools refuse to modify them; use the toolkit configuration/recovery instead.
 
