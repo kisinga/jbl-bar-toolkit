@@ -25,6 +25,10 @@ if [ -f "$STORE/remote.pid" ]; then
     fi
 fi
 [ ! -f "$STORE/remote.log" ] || "$BB" mv "$STORE/remote.log" "$STORE/remote-previous.log"
+# The remote moves a full remote.log to remote.log.1 (log_rotate.go): keep the
+# previous run's next to remote-previous.log, never one from an older run.
+"$BB" rm -f "$STORE/remote-previous.log.1" || exit 1
+[ ! -f "$STORE/remote.log.1" ] || "$BB" mv "$STORE/remote.log.1" "$STORE/remote-previous.log.1"
 "$BB" rm -f "$STORE/READY" || exit 1
 "$STORE/remote" -config "$STORE/config.json" -ready-file "$STORE/READY" >"$STORE/remote.log" 2>&1 </dev/null &
 printf '%s\n' "$!" > "$STORE/remote.pid"
