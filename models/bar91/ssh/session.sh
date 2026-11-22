@@ -5,9 +5,15 @@ VENDOR_DIRS='/usr/local/bin /usr/bin /usr/local/sbin /usr/sbin'
 FIRMWARE_DIRS='/bin /sbin'
 # Private per-boot cache in RAM. Symlinks must stay out of the SSH store:
 # toolkit updates refuse a component store that contains any. The suffix is
-# the selection rules' version: bump it whenever they change, so an update
-# without a reboot builds a new cache instead of reusing a stale one.
-APPLETS=/tmp/jbl-local-ssh-applets.2
+# a checksum of this script, so an update without a reboot builds a new cache
+# instead of reusing one made by older rules. Without it, no cache is used.
+APPLETS_BASE=/tmp/jbl-local-ssh-applets
+APPLETS=
+version=$("$BB" sha256sum < "$0" 2>/dev/null) && version=${version%% *} &&
+    [ "${#version}" = 64 ] && APPLETS=$APPLETS_BASE.$("$BB" printf %.16s "$version")
+# Power commands stay with the firmware: BusyBox's versions only signal
+# PID 1, and on 21 Nov 2026 /bin/busybox reboot did not restart the bar.
+FIRMWARE_ONLY='halt poweroff reboot'
 LD_LIBRARY_PATH=/system/bdplib:/system/usr/lib:/system/usr/local/lib
 LD_PRELOAD=
 
@@ -22,7 +28,7 @@ HARD_FLOAT_LOADER=/lib/ld-linux-armhf.so.3
 # Such a command therefore runs as a BusyBox applet when BusyBox has one.
 # Real vendor utilities keep precedence and their library environment.
 hard_float() {
-    "$BB" dd if="$1" bs=4096 count=1 2>/dev/null | "$BB" grep -q "$HARD_FLOAT_LOADER"
+    "$BB" dd if="$1" bs=4096 count=1 2>/dev/null | "$BB" grep -qF "$HARD_FLOAT_LOADER"
 }
 vendor_command() {
     for dir in $VENDOR_DIRS; do
@@ -48,15 +54,16 @@ fill_applets() {
     set -f
     for name in $list; do
         case "$name" in ''|.*|*/*) continue;; esac
+        case " $FIRMWARE_ONLY " in *" $name "*) continue;; esac
         vendor_command "$name" && continue
         "$BB" ln -s "$BB" "$1/$name" || { set +f; return 1; }
     done
     set +f
 }
-applets_ready() { [ -d "$APPLETS" ] && [ ! -L "$APPLETS" ] && [ -O "$APPLETS" ]; }
+applets_ready() { [ -n "$APPLETS" ] && [ -d "$APPLETS" ] && [ ! -L "$APPLETS" ] && [ -O "$APPLETS" ]; }
 build_applets() {
     # Only create a missing cache; never adopt a path made by someone else.
-    [ ! -e "$APPLETS" ] && [ ! -L "$APPLETS" ] || return 1
+    [ -n "$APPLETS" ] && [ ! -e "$APPLETS" ] && [ ! -L "$APPLETS" ] || return 1
     new=$APPLETS.new.$$
     "$BB" rm -rf "$new" && "$BB" mkdir -m 700 "$new" || return 1
     if fill_applets "$new" && "$BB" mv "$new" "$APPLETS"; then

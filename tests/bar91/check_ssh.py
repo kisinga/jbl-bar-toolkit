@@ -257,7 +257,7 @@ def session_tests():
     # Firmware layout fixture: /bin and /sbin hold BusyBox plus applets of a
     # foreign C runtime that crash under the SSH namespace's vendor loader;
     # vendor directories hold native utilities and links into both.
-    applets_wanted = ("cat", "dd", "od", "awk", "pidof", "date", "clear", "top", "ifconfig", "sort")
+    applets_wanted = ("cat", "dd", "od", "awk", "pidof", "date", "clear", "top", "ifconfig", "sort", "reboot", "uptime")
     available = set(run([BB, "--list"]).stdout.split())
     assert set(applets_wanted) <= available, sorted(set(applets_wanted) - available)
     with tempfile.TemporaryDirectory(prefix="jbl-ssh-session-") as tmp:
@@ -271,6 +271,8 @@ def session_tests():
         for name in ("cat", "dd", "od", "pidof", "date", "clear", "toolbox-only"):
             (root / "bin" / name).symlink_to("toolbox")
         (root / "sbin/ifconfig").symlink_to("../bin/toolbox")
+        # Power commands stay with the firmware even though BusyBox has them.
+        (root / "sbin/reboot").symlink_to("../bin/toolbox")
         # Hard-float program in a vendor directory (/usr/bin/awk -> gawk on the bar):
         # it names the system armhf loader and crashes with the vendor libraries.
         (root / "system/usr/bin").mkdir(parents=True)
@@ -283,20 +285,31 @@ def session_tests():
             path = root / folder / name
             path.write_text('#!/bin/sh\necho "vendor-' + name + ' $LD_LIBRARY_PATH"\n')
             path.chmod(0o755)
+        # A vendor program whose bytes only resemble the loader path as a
+        # regular expression ("." matching any character) stays a vendor one.
+        lookalike = root / "usr/bin/uptime"
+        lookalike.write_text("#!/bin/sh\n# /lib/ld-linux-armhfXsoX3\necho vendor-uptime\n")
+        lookalike.chmod(0o755)
         (root / "data.txt").write_text("data-ok\n")
-        applets = root / "ram/applets"
+        applets_base = root / "ram/applets"
         source = (ROOT / "models/bar91/ssh/session.sh").read_text()
         for old, new in (
             ("BB=/bin/busybox", "BB=" + str(root / "bin/busybox")),
             ("VENDOR_DIRS='/usr/local/bin /usr/bin /usr/local/sbin /usr/sbin'",
              "VENDOR_DIRS='" + " ".join(str(root / d) for d in ("usr/local/bin", "usr/bin", "usr/local/sbin", "usr/sbin")) + "'"),
             ("FIRMWARE_DIRS='/bin /sbin'", "FIRMWARE_DIRS='" + str(root / "bin") + " " + str(root / "sbin") + "'"),
-            ("APPLETS=/tmp/jbl-local-ssh-applets.2", "APPLETS=" + str(applets)),
+            ("APPLETS_BASE=/tmp/jbl-local-ssh-applets", "APPLETS_BASE=" + str(applets_base)),
         ):
             assert source.count(old) == 1, old
             source = source.replace(old, new)
         session = root / "session.sh"
         session.write_text(source)
+
+        def cache_for(script):
+            # The cache name carries the start of the script's SHA-256.
+            return Path(str(applets_base) + "." + hashlib.sha256(script.read_bytes()).hexdigest()[:16])
+
+        applets = cache_for(session)
         vendor_lib = "/system/bdplib:/system/usr/lib:/system/usr/local/lib"
         data = str(root / "data.txt")
         command = "; ".join((
@@ -304,7 +317,7 @@ def session_tests():
             "echo x | awk '{print \"awk-ok\"}'", "pidof no-such-process; echo pidof=$?",
             "date +%Y | grep -Eq '^[0-9]{4}$' && echo date-ok", "clear >/dev/null && echo clear-ok",
             "ifconfig lo >/dev/null 2>&1; echo ifconfig=$?", "printf 'b\\na\\n' | sort | tr -d '\\n'; echo",
-            "top", "ssh-keygen", "for c in cat awk sort top ifconfig toolbox-only; do command -v $c; done",
+            "top", "ssh-keygen", "uptime", "for c in cat awk sort top ifconfig toolbox-only reboot; do command -v $c; done",
         ))
         base = {"PATH": "/usr/bin:/bin", "HOME": str(root)}
 
@@ -314,9 +327,10 @@ def session_tests():
 
         expected = [
             "data-ok", "data-ok", "A", "awk-ok", "pidof=1", "date-ok", "clear-ok", "ifconfig=0", "ab",
-            "vendor-top " + vendor_lib, "vendor-ssh-keygen " + vendor_lib,
+            "vendor-top " + vendor_lib, "vendor-ssh-keygen " + vendor_lib, "vendor-uptime",
             str(applets / "cat"), str(applets / "awk"), str(root / "usr/bin/sort"),
             str(root / "usr/bin/top"), str(applets / "ifconfig"), str(root / "bin/toolbox-only"),
+            str(root / "sbin/reboot"),
         ]
         result = session_run({"SSH_ORIGINAL_COMMAND": command})
         lines = [line.strip() for line in result.stdout.splitlines()]
@@ -324,9 +338,9 @@ def session_tests():
         assert "Segmentation fault" not in result.stderr, result.stderr
         assert applets.is_dir() and not applets.is_symlink() and applets.stat().st_mode & 0o777 == 0o700
         assert os.readlink(applets / "awk") == str(root / "bin/busybox")
-        for kept in ("top", "sort", "ssh-keygen", "toolbox-only"):
+        for kept in ("top", "sort", "ssh-keygen", "toolbox-only", "reboot", "uptime"):
             assert not os.path.lexists(applets / kept), kept
-        assert sorted(p.name for p in (root / "ram").iterdir()) == ["applets"]
+        assert sorted(p.name for p in (root / "ram").iterdir()) == [applets.name]
         passed("session_runs_firmware_commands_as_busybox_applets_and_keeps_vendor_utilities")
 
         # Later sessions reuse the per-boot cache, interactively as well.
@@ -351,6 +365,20 @@ def session_tests():
         assert str(applets) not in result.stdout.splitlines()[2]
         assert applets.read_text() == "foreign\n"
         passed("session_starts_without_foreign_applet_cache")
+
+        # A changed script (an update without a reboot) builds its own cache
+        # instead of reusing one made by older rules.
+        applets.unlink()
+        assert session_run({"SSH_ORIGINAL_COMMAND": "true"}).returncode == 0
+        old = applets
+        with session.open("a") as script:
+            script.write("# changed selection rules\n")
+        applets = cache_for(session)
+        assert applets != old
+        result = session_run({"SSH_ORIGINAL_COMMAND": "command -v cat"})
+        assert result.returncode == 0 and result.stdout.split() == [str(applets / "cat")], (result.stdout, result.stderr)
+        assert old.is_dir() and sorted(p.name for p in (root / "ram").iterdir()) == sorted([old.name, applets.name])
+        passed("changed_session_script_builds_a_new_applet_cache")
 
 
 def installer_tests():

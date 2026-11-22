@@ -7,7 +7,7 @@ generated from that section plus the installation and recovery instructions.
 ## Unreleased
 
 - Keep SSH reachable when the soundbar changes its network address after startup, such as releasing Wi-Fi for Ethernet during boot or when a cable is connected later.
-- Run common shell commands such as `cat`, `dd`, `awk`, `date` and `clear` in SSH sessions through BusyBox instead of crashing with `Segmentation fault`, while the bar's own utilities keep precedence.
+- Run common shell commands such as `cat`, `dd`, `awk`, `date` and `clear` in SSH sessions through BusyBox instead of crashing with `Segmentation fault`, while the bar's own utilities keep precedence; `reboot`, `poweroff` and `halt` stay with the firmware.
 
 ## 0.3.0-dev.12
 
