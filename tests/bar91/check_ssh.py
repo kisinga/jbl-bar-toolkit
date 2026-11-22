@@ -515,6 +515,15 @@ wait_listener() {
     refusals=$("$BB" cat "$STORE/fixture-refusals")
     if [ "$refusals" -gt 0 ]; then
         echo $((refusals - 1)) > "$STORE/fixture-refusals"
+        # Refuse only once the stand-in daemon has started, as a real listener
+        # has before its confirmation fails. Refusing at once let the stop race
+        # the daemon's startup, so the recorded daemon count varied.
+        waited=0
+        while [ "$("$BB" cat "$STORE/sshd.pid" 2>/dev/null)" != "$1" ]; do
+            [ "$waited" -lt 100 ] || return 1
+            "$BB" sleep 1
+            waited=$((waited + 1))
+        done
         return 1
     fi
     confirmed=0
