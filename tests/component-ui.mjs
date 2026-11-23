@@ -105,7 +105,7 @@ try {
     if(bassIncluded){
       check(await matrix.locator('#bass-offset-panel').getAttribute('open')!==null,'supported offset starts expanded');
       await matrix.locator('#bass-offset-panel').evaluate(el=>el.open=false);
-      await matrix.locator('#refresh').click();
+      await matrix.locator('#refresh:visible, #refresh-footer:visible').first().click();
       check(await matrix.locator('#bass-offset-panel').getAttribute('open')===null,'refresh preserves offset disclosure');
     }
     await matrix.close();
