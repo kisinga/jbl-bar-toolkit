@@ -241,6 +241,11 @@ try {
   check(!state.eq.enabled && await page.locator('#eq-slider-2').inputValue()==='-1' && await page.locator('#eq-apply').isEnabled(),'refused EQ preserves the unapplied draft without claiming success');
   failure='';state.eq={...eqFixture(),enabled:true,gains_db:[-2,0,0,0,0],status:'active'};await page.waitForFunction(()=>document.querySelector('#eq-slider-0').value==='-2');
   check(await page.locator('#section-nav [data-badge=eq]').isVisible() && (await page.locator('#section-nav [data-badge=eq]').textContent())==='On' && await page.locator('#section-nav a[href="#eq-panel"]').getAttribute('aria-label')==='Front EQ, on','the menu marks an applied EQ On');
+  state.eq={...state.eq,status:'waiting'};
+  await page.waitForFunction(()=>document.querySelector('#eq-badge').dataset.state==='waiting');
+  check((await page.locator('#section-nav [data-badge=eq]').textContent())==='Waiting' && await page.locator('#section-nav a[href="#eq-panel"]').getAttribute('aria-label')==='Front EQ, waiting to apply','an EQ the bar does not play yet reads Waiting in the menu, as in the panel, not On');
+  state.eq={...state.eq,status:'active'};
+  await page.waitForFunction(()=>document.querySelector('#section-nav [data-badge=eq]').textContent==='On');
   check(await page.locator('#eq-slider-2').inputValue()==='0','new committed soundbar EQ replaces an obsolete local draft');
   state.bass_offset={offset_db:-1.5,status:'waiting',error:'WAITING_FOR_FRONT_EQ'};
   await page.waitForFunction(()=>document.querySelector('#eq-state').textContent.includes('Bass offset paused'));
