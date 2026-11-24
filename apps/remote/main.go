@@ -67,6 +67,7 @@ type state struct {
 	Streaming     *streamState     `json:"streaming,omitempty"`
 	SourceState   *uint32          `json:"source_state,omitempty"`
 	WiFi          wifiState        `json:"wifi"`
+	Ethernet      ethernetState    `json:"ethernet"`
 	Bluetooth     *bluetoothState  `json:"bluetooth,omitempty"`
 	Available     bool             `json:"available"`
 	Error         string           `json:"error,omitempty"`
@@ -393,7 +394,7 @@ func (d *device) bluetooth() *bluetoothState {
 func (d *device) snapshotLocked() state {
 	if e := d.identify(); e != nil {
 		d.revision++
-		s := state{BassOffset: d.bassStatus(), System: d.monitor.sample(time.Now()), Revision: d.revision, WiFi: readWiFi(), Power: "Starting", Mode: "Unknown", Input: "Unknown", Error: e.Error()}
+		s := state{BassOffset: d.bassStatus(), System: d.monitor.sample(time.Now()), Revision: d.revision, WiFi: readWiFi(), Ethernet: readEthernet(), Power: "Starting", Mode: "Unknown", Input: "Unknown", Error: e.Error()}
 		if d.automation != nil {
 			a := *d.automation
 			s.Automation = &a
@@ -442,6 +443,7 @@ func (d *device) snapshotCurrent() state {
 		s.Streaming = d.streaming(v)
 	}
 	s.WiFi = readWiFi()
+	s.Ethernet = readEthernet()
 	if p == 1 && system == 0 {
 		s.Power = "On"
 	} else if system == 1 || system == 2 || system == 3 || p == 0 {

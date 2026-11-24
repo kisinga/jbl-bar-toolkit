@@ -344,6 +344,27 @@ try {
   check(await page.locator('#local-address').isVisible(),'confirmed local hostname shown');
   check((await page.locator('#local-address').getAttribute('href'))==='http://jbl.local','local address uses advertised alias');
   check((await page.locator('#wifi-status').textContent()).includes('Strong signal'),'Wi-Fi quality label');
+  check(await page.locator('#ethernet-panel').getAttribute('hidden')!==null && (await page.locator('#traffic-heading').textContent())==='Wi-Fi traffic','no Ethernet part until the remote reports the port');
+  // Ethernet: the port is shown once reported; with a cable the bar drops
+  // Wi-Fi, and the traffic shown follows the wired link.
+  const savedWiFi=state.wifi, savedSystem=state.system;
+  state.ethernet={available:true,connected:false};
+  await page.waitForFunction(()=>!document.querySelector('#ethernet-panel').hidden);
+  check(await page.locator('#system-panel #ethernet-panel').count()===1 && (await page.locator('#ethernet-heading').textContent())==='Ethernet connection' && (await page.locator('#ethernet-name').textContent())==='No cable connected' && (await page.locator('#ethernet-status').textContent())==='Plug a network cable into the ETHERNET port to use it instead of Wi-Fi.' && (await page.locator('#ethernet-ip').textContent())==='—','an unplugged Ethernet port says how to use it');
+  state.ethernet={available:true,connected:true,ip:'192.168.50.7',speed_mbps:100,duplex:'full'};
+  state.wifi={available:true,connected:false};
+  state.system={...state.system,sample:state.system.sample+1,ethernet_network:{receive_bytes_per_second:2048,transmit_bytes_per_second:512}};
+  await page.waitForFunction(()=>document.querySelector('#ethernet-name').textContent==='Wired network');
+  check((await page.locator('#ethernet-status').textContent())==='Connected' && (await page.locator('#ethernet-ip').textContent())==='192.168.50.7' && (await page.locator('#ethernet-link').textContent())==='100 Mbit/s · full duplex','a cable shows the address, speed and duplex');
+  check((await page.locator('#wifi-status').textContent())==='Not in use while the Ethernet cable is connected','Wi-Fi says why it is off while the cable is connected');
+  check(await page.locator('#local-address').getAttribute('hidden')!==null && await page.locator('#ethernet-local-address').getAttribute('hidden')===null,'jbl.local moves to the connection in use');
+  check((await page.locator('#traffic-heading').textContent())==='Ethernet traffic' && (await page.locator('#network-receive').textContent())==='2 KiB/s' && (await page.locator('#network-transmit').textContent())==='512 B/s','traffic follows the wired link');
+  state.ethernet={available:true,connected:true,ip:'192.168.50.7',speed_mbps:1000};
+  await page.waitForFunction(()=>document.querySelector('#ethernet-link').textContent==='1 Gbit/s');
+  check(true,'gigabit links read in Gbit/s, without an unknown duplex');
+  state.wifi=savedWiFi;state.system={...savedSystem,sample:state.system.sample+1};delete state.ethernet;
+  await page.waitForFunction(()=>document.querySelector('#ethernet-panel').hidden && document.querySelector('#traffic-heading').textContent==='Wi-Fi traffic');
+  check((await page.locator('#network-receive').textContent())==='16 KiB/s' && await page.locator('#local-address').getAttribute('hidden')===null,'back on Wi-Fi, its traffic and jbl.local again');
   await page.locator('.device-details summary').click();
   check((await page.locator('#device-uptime').textContent())==='1d 1h 5m','uptime shown in readable units');
   check((await page.locator('#device-automation').textContent())==='Standard selected after wake','automation status explained');
@@ -1063,7 +1084,8 @@ try {
   screenshotFeatures={...screenshotFeatures,extensions:[...screenshotFeatures.extensions,{id:'bar91.display-clock',component:'display-clock',included:true,actions:['bar91.display-clock.set']}]};
   state.extensions={...state.extensions,'bar91.display-clock':{enabled:false,when:'standby',tz:''}};
   await page.reload();
-  await page.waitForFunction(()=>!document.querySelector('#message-clock-section').hidden);
+  // The section can show (features) a moment before the clock state renders.
+  await page.waitForFunction(()=>!document.querySelector('#message-clock-section').hidden && document.querySelector('#message-clock button[aria-pressed=true]'));
   const clockMode=()=>page.evaluate(()=>[...document.querySelectorAll('#message-clock button')].filter(b=>b.getAttribute('aria-pressed')==='true').map(b=>b.dataset.clock).join());
   check(await clockMode()==='off','the clock choice follows the bar: off');
   const zone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);

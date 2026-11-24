@@ -13,16 +13,18 @@ import (
 // All readings are passive. Sampling shares the device lock and existing SSE
 // reader; repeated actions/clients reuse one two-second snapshot.
 type systemState struct {
-	Sample        uint64        `json:"sample"`
-	CPUPercent    *float64      `json:"cpu_percent,omitempty"`
-	CPUCores      int           `json:"cpu_cores,omitempty"`
-	LoadAverage   []float64     `json:"load_average,omitempty"`
-	Memory        *memoryState  `json:"memory,omitempty"`
-	Storage       *storageState `json:"storage,omitempty"`
-	Network       *networkRates `json:"network,omitempty"`
-	TemperatureC  *float64      `json:"temperature_c,omitempty"`
-	Processes     *int          `json:"processes,omitempty"`
-	UptimeSeconds *uint64       `json:"uptime_seconds,omitempty"`
+	Sample      uint64        `json:"sample"`
+	CPUPercent  *float64      `json:"cpu_percent,omitempty"`
+	CPUCores    int           `json:"cpu_cores,omitempty"`
+	LoadAverage []float64     `json:"load_average,omitempty"`
+	Memory      *memoryState  `json:"memory,omitempty"`
+	Storage     *storageState `json:"storage,omitempty"`
+	Network     *networkRates `json:"network,omitempty"`
+	// EthernetNetwork: the same rates for the wired port (eth0).
+	EthernetNetwork *networkRates `json:"ethernet_network,omitempty"`
+	TemperatureC    *float64      `json:"temperature_c,omitempty"`
+	Processes       *int          `json:"processes,omitempty"`
+	UptimeSeconds   *uint64       `json:"uptime_seconds,omitempty"`
 }
 type memoryState struct {
 	Total     uint64 `json:"total_bytes"`
@@ -47,6 +49,7 @@ type systemMonitor struct {
 	cached   *systemState
 	cpu      *cpuCounters
 	network  *networkCounters
+	ethernet *networkCounters
 }
 
 func parseCPU(b []byte) (*cpuCounters, int) {
@@ -152,10 +155,13 @@ func parseLoads(b []byte) []float64 {
 	}
 	return values
 }
-func parseNetwork(b []byte) *networkCounters {
+func parseNetwork(b []byte) *networkCounters { return parseInterfaceCounters(b, "wlan0") }
+
+// parseInterfaceCounters reads one interface's byte counters from /proc/net/dev.
+func parseInterfaceCounters(b []byte, iface string) *networkCounters {
 	for _, line := range strings.Split(string(b), "\n") {
 		name, rest, ok := strings.Cut(line, ":")
-		if !ok || strings.TrimSpace(name) != "wlan0" {
+		if !ok || strings.TrimSpace(name) != iface {
 			continue
 		}
 		f := strings.Fields(rest)
@@ -231,7 +237,7 @@ func (m *systemMonitor) sample(now time.Time) *systemState {
 	// A hidden page may leave no subscribers for minutes. Start a new CPU/
 	// bandwidth interval instead of presenting that long average as a live one.
 	if seconds > 8 || seconds <= 0 {
-		m.cpu, m.network = nil, nil
+		m.cpu, m.network, m.ethernet = nil, nil, nil
 	}
 	m.sequence++
 	s := &systemState{Sample: m.sequence}
@@ -253,8 +259,11 @@ func (m *systemMonitor) sample(now time.Time) *systemState {
 		next := parseNetwork(b)
 		s.Network = networkUsage(m.network, next, seconds)
 		m.network = next
+		wired := parseInterfaceCounters(b, ethernetInterface)
+		s.EthernetNetwork = networkUsage(m.ethernet, wired, seconds)
+		m.ethernet = wired
 	} else {
-		m.network = nil
+		m.network, m.ethernet = nil, nil
 	}
 	if b, e := os.ReadFile("/proc/uptime"); e == nil {
 		f := strings.Fields(string(b))

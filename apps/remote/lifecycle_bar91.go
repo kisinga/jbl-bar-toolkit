@@ -25,7 +25,7 @@ func (r *remote) startBar91(parent context.Context) *bar91Lifecycle {
 		go func() { defer life.workers.Done(); work(ctx) }()
 	}
 	if !r.cfg.Headless {
-		start(monitorWiFi)
+		start(monitorNetwork)
 		start(monitorCast)
 		start(func(ctx context.Context) { monitorDiscovery(ctx, r.network) })
 		start(r.extensions.Run)

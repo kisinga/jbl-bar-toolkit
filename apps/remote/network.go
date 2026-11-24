@@ -9,6 +9,7 @@ import (
 	"jbl-bar-toolkit/remote/internal/server"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,86 @@ type networkCache struct {
 }
 
 var wifiCache networkCache
+
+// ethernetState is the bar's wired port (eth0, ETHERNET on the back panel).
+// The firmware drops Wi-Fi while a cable is connected.
+type ethernetState struct {
+	Available bool   `json:"available"`
+	Connected bool   `json:"connected"`
+	IP        string `json:"ip,omitempty"`
+	SpeedMbps *int   `json:"speed_mbps,omitempty"`
+	Duplex    string `json:"duplex,omitempty"`
+}
+
+const ethernetInterface = "eth0"
+
+var (
+	ethernetSysfs = "/sys/class/net" // tests point it elsewhere
+	ethernetCache struct {
+		sync.Mutex
+		state ethernetState
+	}
+)
+
+// parseEthernet reads the link of one interface from sysfs: carrier, then
+// the negotiated speed and duplex, which the driver only reports with a
+// link (unknown otherwise: -1, "unknown" or a read error).
+func parseEthernet(root, name string) ethernetState {
+	dir := filepath.Join(root, name)
+	if st, e := os.Stat(dir); e != nil || !st.IsDir() {
+		return ethernetState{}
+	}
+	s := ethernetState{Available: true}
+	read := func(file string) string {
+		b, e := os.ReadFile(filepath.Join(dir, file))
+		if e != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(b))
+	}
+	if s.Connected = read("carrier") == "1" && read("operstate") != "down"; !s.Connected {
+		return s
+	}
+	if n, e := strconv.Atoi(read("speed")); e == nil && n > 0 && n <= 400000 {
+		s.SpeedMbps = &n
+	}
+	if d := read("duplex"); d == "full" || d == "half" {
+		s.Duplex = d
+	}
+	return s
+}
+
+// interfaceIPv4 is the first IPv4 address of a network interface, or "".
+func interfaceIPv4(name string) string {
+	iface, e := net.InterfaceByName(name)
+	if e != nil {
+		return ""
+	}
+	addresses, e := iface.Addrs()
+	if e != nil {
+		return ""
+	}
+	for _, address := range addresses {
+		if p, ok := address.(*net.IPNet); ok && p.IP.To4() != nil {
+			return p.IP.String()
+		}
+	}
+	return ""
+}
+func readEthernet() ethernetState {
+	ethernetCache.Lock()
+	defer ethernetCache.Unlock()
+	return ethernetCache.state
+}
+func refreshEthernet() {
+	s := parseEthernet(ethernetSysfs, ethernetInterface)
+	if s.Connected {
+		s.IP = interfaceIPv4(ethernetInterface)
+	}
+	ethernetCache.Lock()
+	ethernetCache.state = s
+	ethernetCache.Unlock()
+}
 
 func wpaRequest(endpoint, command string) (string, error) {
 	nonce := make([]byte, 12)
@@ -161,23 +242,17 @@ func refreshWiFi() {
 		break
 	}
 	if result.Connected && result.IP == "" {
-		if iface, e := net.InterfaceByName("wlan0"); e == nil {
-			if addresses, e := iface.Addrs(); e == nil {
-				for _, address := range addresses {
-					if p, ok := address.(*net.IPNet); ok && p.IP.To4() != nil {
-						result.IP = p.IP.String()
-						break
-					}
-				}
-			}
-		}
+		result.IP = interfaceIPv4("wlan0")
 	}
 	wifiCache.Lock()
 	wifiCache.state = result
 	wifiCache.Unlock()
 }
-func monitorWiFi(ctx context.Context) {
+
+// monitorNetwork refreshes the Wi-Fi and Ethernet states every 5 s.
+func monitorNetwork(ctx context.Context) {
 	refreshWiFi()
+	refreshEthernet()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -186,6 +261,7 @@ func monitorWiFi(ctx context.Context) {
 			return
 		case <-ticker.C:
 			refreshWiFi()
+			refreshEthernet()
 		}
 	}
 }
