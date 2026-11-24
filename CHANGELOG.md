@@ -12,6 +12,7 @@ generated from that section plus the installation and recovery instructions.
 - Explain the boot integrity check in the USB guide: hand-edited toolkit files stop the next boot (`BOOT_RUNTIME_INTEGRITY_FAILED`), and `action=configure` repairs it.
 - Keep SSH reachable when the soundbar changes its network address after startup, such as releasing Wi-Fi for Ethernet during boot or when a cable is connected later.
 - Run common shell commands such as `cat`, `dd`, `awk`, `date` and `clear` in SSH sessions through BusyBox instead of crashing with `Segmentation fault`, while the bar's own utilities keep precedence; `reboot`, `poweroff` and `halt` stay with the firmware.
+- Add a section menu to the web remote: a column beside the panels on wide screens and a row of chips under the header on phones, with running timers, messages on the bar and an applied Front EQ marked beside their sections. On phones, Connected shows only when the connection is not live and Refresh moves to the foot of the page.
 
 ## 0.3.0-dev.12
 

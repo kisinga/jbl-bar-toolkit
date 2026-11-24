@@ -230,6 +230,7 @@ try {
   check(await page.locator('#eq-apply').isEnabled() && (await page.locator('#eq-apply').textContent())==='Turn off EQ' && (await page.locator('#eq-state').textContent())==='Select Turn off EQ to restore the original sound.','choosing Original over an applied EQ offers Turn off EQ instead of a separate Reset');
   await page.locator('#eq-apply').click();await page.waitForFunction(()=>document.querySelector('#message-text').textContent==='Original tuning restored.');
   check(lastPayload.action==='eq_apply' && JSON.stringify(lastPayload.gains_db)==='[0,0,0,0,0]' && await page.locator('#eq-badge').getAttribute('data-state')==='off','Turn off EQ sends Original once and the badge says Off');
+  check(await page.locator('#section-nav [data-badge=eq]').isHidden() && await page.locator('#section-nav a[href="#eq-panel"]').getAttribute('aria-label')===null,'the menu drops the EQ mark once it is off');
   await page.locator('#eq-slider-1').evaluate(input=>{input.value='-6';input.dispatchEvent(new Event('input',{bubbles:true}));});
   await page.locator('#eq-apply').click();await page.waitForFunction(()=>document.querySelector('#message-text').textContent==='Front EQ applied.');
   await page.locator('#eq-slider-1').evaluate(input=>{input.value='0';input.dispatchEvent(new Event('input',{bubbles:true}));});
@@ -239,6 +240,7 @@ try {
   failure='EQ application refused';await page.locator('#eq-apply').click();await page.waitForFunction(()=>document.querySelector('#message').dataset.kind==='error');
   check(!state.eq.enabled && await page.locator('#eq-slider-2').inputValue()==='-1' && await page.locator('#eq-apply').isEnabled(),'refused EQ preserves the unapplied draft without claiming success');
   failure='';state.eq={...eqFixture(),enabled:true,gains_db:[-2,0,0,0,0],status:'active'};await page.waitForFunction(()=>document.querySelector('#eq-slider-0').value==='-2');
+  check(await page.locator('#section-nav [data-badge=eq]').isVisible() && (await page.locator('#section-nav [data-badge=eq]').textContent())==='On' && await page.locator('#section-nav a[href="#eq-panel"]').getAttribute('aria-label')==='Front EQ, on','the menu marks an applied EQ On');
   check(await page.locator('#eq-slider-2').inputValue()==='0','new committed soundbar EQ replaces an obsolete local draft');
   state.bass_offset={offset_db:-1.5,status:'waiting',error:'WAITING_FOR_FRONT_EQ'};
   await page.waitForFunction(()=>document.querySelector('#eq-state').textContent.includes('Bass offset paused'));
@@ -386,7 +388,7 @@ try {
   check(calls.length===released,'hold stops generating after release');
   // A stale GET must not rewind a control response.
   getDelay=700;
-  await page.locator('#refresh').click(); await pause(50);
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(50);
   const before=state.volume;
   await page.keyboard.press('ArrowDown');
   await pause(900);
@@ -399,22 +401,22 @@ try {
   check(await page.locator('#eq-slider-0').isDisabled() && await page.locator('#eq-preset').isDisabled() && await page.locator('#eq-apply').isDisabled(),'offline disables EQ presets, drafts and mutations');
   check(await page.locator('#cpu-chart').getAttribute('data-samples')==='0' && await page.locator('#system-panel').getAttribute('data-state')==='offline' && await page.locator('#memory-value').textContent()==='—','offline clears graphs and readings rather than displaying false zeros');
   const atLoss=calls.length; offline=false;
-  await page.locator('#refresh').click();
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(()=>document.querySelector('#connection').dataset.state==='online');
   await pause(600);
   check(calls.length===atLoss,'reconnect never replays controls');
   check(await page.locator('#power').evaluate(b=>b.classList.contains('on') && getComputedStyle(b).color==='rgb(241, 171, 133)'),'when the bar is on, the power button is lit (orange)');
-  state.power='Standby'; await page.locator('#refresh').click();
+  state.power='Standby'; await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(()=>document.querySelector('#power').getAttribute('aria-label')==='Turn soundbar on');
   check(await plus.isDisabled() && await page.locator('#power').isEnabled(),'standby only permits power');
   check(await page.locator('#power').evaluate(b=>!b.classList.contains('on') && getComputedStyle(b).color==='rgb(170, 180, 197)'),'in standby the power button is grey');
   check(await page.locator('#eq-slider-0').isDisabled() && (await page.locator('#eq-state').textContent()).includes('Turn on'),'standby blocks EQ and explains why');
   check((await page.locator('#summary').textContent()).includes('standby'),'standby copy');
   state.available=false;state.power='Starting';state.error='Soundbar is starting';
-  await page.locator('#refresh').click();
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(()=>document.querySelector('#connection-label').textContent==='Starting');
   check(await page.locator('#power').isDisabled(),'starting firmware disables power');
-  state=initial(); await page.locator('#refresh').click();
+  state=initial(); await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(()=>document.querySelector('#power').getAttribute('aria-label')==='Put soundbar in standby');
   await page.locator('[data-action=input_bluetooth]').click();
   check((await page.locator('#message-text').textContent()).includes('Bluetooth'),'Bluetooth progress');
@@ -426,7 +428,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('#bt-status').textContent==='Ready to pair');
   check(await page.locator('#bt-pair').isDisabled(),'discoverability readback confirms pairing');
   state.bluetooth.discoverable=false;state.bluetooth.connected=true;state.bluetooth.audio='Streaming';state.bluetooth.peer_name='Example phone';
-  await page.locator('#refresh').click();
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(()=>document.querySelector('#bt-status').textContent==='Streaming audio');
   check((await page.locator('#bt-pair-label').textContent())==='Pair another device','connected device pairing action');
   check((await page.locator('#bt-help').textContent()).includes('Example phone'),'connected peer name shown separately from bar name');
@@ -520,7 +522,7 @@ try {
   await page.locator('#cancel-volume').click();
   await page.waitForFunction(()=>document.querySelector('#message').dataset.kind==='success');
   check(calls.length===1,'cancel clears unsent volume intents');
-  state=initial();await page.locator('#refresh').click();await pause(200);
+  state=initial();await page.locator('#refresh:visible, #refresh-footer:visible').first().click();await pause(200);
   delay=120;
   check(await page.locator('[data-level=bass] [aria-checked=true]').textContent()==='1','bass level 1 selected');
   await page.locator('[data-level=bass] [data-value="1"]').click();
@@ -568,11 +570,11 @@ try {
   check(calls.length===syncCalls+4,'typing the current delay sends nothing');
   await page.locator('#av-sync-input').fill('20'); await page.locator('#av-sync-input').press('Enter');
   await page.waitForFunction(()=>document.querySelector('#av-sync-value').textContent==='20 ms');
-  state.source_state=3; await page.locator('#refresh').click(); await pause(200);
+  state.source_state=3; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   check(!(await page.locator('#av-sync-up').isDisabled()),'audio sync stays available on HDMI');
-  state.source_state=2; await page.locator('#refresh').click(); await pause(200);
+  state.source_state=2; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   check(await page.locator('#av-sync-up').isDisabled() && (await page.locator('#av-sync-value').textContent()).includes('select TV or HDMI'),'audio sync is disabled on Bluetooth');
-  state.source_state=0; await page.locator('#refresh').click(); await pause(200);
+  state.source_state=0; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   check(await page.locator('#mode-select [aria-checked=true]').textContent()==='Standard','Standard is selected in the mode control');
   const modeCalls=calls.length;
   await page.locator('#mode-select [data-mode=Standard]').click(); await pause(150);
@@ -598,7 +600,7 @@ try {
   check(await page.locator('[data-action=volume_up]').isEnabled() && await page.locator('#night').isEnabled(),'controls return when the other control finishes');
   delete state.control;
   check(await page.locator('#calibrate').isHidden() && await page.locator('#audio-format-row').isHidden(),'setup controls and audio format stay hidden on older remotes');
-  state.setup={sub_pairing:false}; state.sound.audio_format='DOLBY SURROUND DD+'; await page.locator('#refresh').click(); await pause(200);
+  state.setup={sub_pairing:false}; state.sound.audio_format='DOLBY SURROUND DD+'; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   check(await page.locator('#audio-format').textContent()==='DOLBY SURROUND DD+','audio format shown in Sound');
   await page.locator('#room-setup').evaluate(el=>el.open=true);
   check(await page.locator('#calibrate').isDisabled() && (await page.locator('#calibration-value').textContent()).includes('Undock'),'calibration needs undocked rear speakers');
@@ -607,22 +609,22 @@ try {
     check(await page.locator('#room-setup .setup-row:not(.sound-note)').evaluateAll(rows=>rows.every(row=>{const panel=row.closest('.panel').getBoundingClientRect(),button=row.querySelector('button').getBoundingClientRect(),label=row.firstElementChild.getBoundingClientRect();return button.right<=panel.right-1 && label.right<=button.left;})),'room setup buttons stay inside their panel with a long status at '+width);
   }
   await page.setViewportSize({width:390,height:844});
-  state.sound.rear_docked=false; await page.locator('#refresh').click(); await pause(200);
+  state.sound.rear_docked=false; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   check(!(await page.locator('#calibrate').isDisabled()) && await page.locator('#calibration-value').textContent()==='Ready','calibration ready with rear speakers undocked');
   await page.locator('#calibrate').click();
   await page.waitForFunction(()=>document.querySelector('#calibration-value').textContent==='Step 1 starting');
   check(lastPayload?.action==='calibrate' && Object.keys(lastPayload).length===1,'calibrate sends a fixed control without a value');
   check(await page.locator('#calibrate').isDisabled() && await page.locator('#sub-pair').isDisabled(),'setup controls wait while calibration runs');
-  state.setup={sub_pairing:false,calibration:'Step 1 done'}; await page.locator('#refresh').click(); await pause(200);
+  state.setup={sub_pairing:false,calibration:'Step 1 done'}; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   check(!(await page.locator('#calibrate').isDisabled()),'calibration step 2 can start after step 1');
-  state.setup={sub_pairing:false}; await page.locator('#refresh').click(); await pause(200);
+  state.setup={sub_pairing:false}; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   await page.locator('#sub-pair').click();
   await page.waitForFunction(()=>document.querySelector('#sub-value').textContent.startsWith('Pairing'));
   check(lastPayload?.action==='sub_pair' && (await page.locator('#message').textContent()).includes('back of the subwoofer'),'subwoofer pairing explains the subwoofer button');
   check(await page.locator('#sub-pair').isDisabled(),'pairing button waits while the bar is pairing');
-  state.setup={sub_pairing:false,subwoofer:'Connected'}; await page.locator('#refresh').click(); await pause(200);
+  state.setup={sub_pairing:false,subwoofer:'Connected'}; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   check(await page.locator('#sub-value').textContent()==='Connected','subwoofer connection reported');
-  delete state.setup; delete state.sound.audio_format; state.sound.rear_docked=true; await page.locator('#refresh').click(); await pause(200);
+  delete state.setup; delete state.sound.audio_format; state.sound.rear_docked=true; await page.locator('#refresh:visible, #refresh-footer:visible').first().click(); await pause(200);
   await page.locator('[data-level=atmos] [data-value="2"]').click();
   await page.waitForFunction(()=>document.querySelector('#atmos-value').textContent==='High');
   check(state.sound.atmos===2,'Atmos height cycle confirms readback');
@@ -701,10 +703,11 @@ try {
   await page.locator('.device-details summary').click();
   const beforeIdle=stateGets;await pause(1200);
   check(stateGets===beforeIdle,'idle browser never polls the state endpoint');
-  state=initial();await page.locator('#refresh').click();await pause(200);
-  for (const width of [320,390,650,768,900,1024,1440,1920,2560]) {
+  state=initial();await page.locator('#refresh:visible, #refresh-footer:visible').first().click();await pause(200);
+  for (const width of [320,390,650,768,900,1024,1200,1240,1440,1920,2560]) {
     await page.setViewportSize({width,height:900});
     check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow at '+width);
+    check(await page.locator('.segmented').evaluateAll(rows=>rows.filter(e=>e.getBoundingClientRect().height>0).every(e=>e.scrollWidth<=e.clientWidth+1)),'every level button shows whole at '+width);
     check(await page.locator('button,summary,select,input[type=range],input[type=number]').evaluateAll(elements=>elements.filter(e=>e.getBoundingClientRect().height>0).every(e=>{const r=e.getBoundingClientRect();return r.height>=44 && r.width>=44;})),'44px touch targets for all visible controls at '+width);
     if(width>=900) check(await page.locator('.mode-panel').evaluate(e=>e.getBoundingClientRect().right)<=await page.locator('.tuning-column').evaluate(e=>e.getBoundingClientRect().left),'sound and tuning form separate desktop columns');
     const leftBox=await page.locator('.mode-panel').boundingBox();
@@ -714,7 +717,7 @@ try {
 
   }
   await page.setViewportSize({width:320,height:920});
-  state=initial();state.input='Bluetooth';state.bluetooth={...state.bluetooth,selected:true,connected:true,audio:'Streaming',peer_name:'Example phone'}; await page.locator('#refresh').click();
+  state=initial();state.input='Bluetooth';state.bluetooth={...state.bluetooth,selected:true,connected:true,audio:'Streaming',peer_name:'Example phone'}; await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await pause(200);
   await mkdir(new URL('build/',root),{recursive:true});
   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Bluetooth transport fits at 320px');
@@ -738,6 +741,56 @@ try {
   await page.screenshot({path:fileURLToPath(new URL('build/webremote-mobile-new.png',root)),fullPage:true});
   await page.setViewportSize({width:1200,height:900});
   await page.screenshot({path:fileURLToPath(new URL('build/webremote-desktop-new.png',root)),fullPage:true});
+  // Section navigation: a column beside the panels on wide screens, a row of
+  // chips stuck under the header on phones, where Refresh moves to the foot.
+  const navLayout=()=>page.evaluate(()=>{
+    const nav=document.querySelector('#section-nav'),box=nav.getBoundingClientRect(),shown=e=>e.getBoundingClientRect().width>0;
+    return {direction:getComputedStyle(nav).flexDirection,position:getComputedStyle(nav).position,right:box.right,top:box.top,height:box.height,
+      panels:document.querySelector('.listening').getBoundingClientRect().left,
+      follows:[...nav.querySelectorAll('a')].every(a=>a.hidden===document.querySelector(a.getAttribute('href')).hidden),
+      links:[...nav.querySelectorAll('a')].filter(a=>!a.hidden).length,
+      refresh:shown(document.querySelector('#refresh')),footer:shown(document.querySelector('#refresh-footer')),
+      mirrored:document.querySelector('#refresh-footer').disabled===document.querySelector('#refresh').disabled,
+      online:document.querySelector('#connection').dataset.state==='online',connection:shown(document.querySelector('#connection')),
+      overflow:document.documentElement.scrollWidth>innerWidth};
+  });
+  let nav=await navLayout();
+  check(nav.direction==='column' && nav.right<=nav.panels && nav.position==='sticky' && nav.links>=4,'wide screens: the sections are a sticky column left of the panels');
+  check(nav.follows,'a section hidden by the model hides its link');
+  check(nav.refresh && !nav.footer && nav.online && nav.connection && !nav.overflow,'wide screens keep Refresh and Connected in the header');
+  await page.setViewportSize({width:390,height:920});
+  nav=await navLayout();
+  check(nav.direction==='row' && nav.position==='sticky' && nav.height<=60 && !nav.overflow,'phones: the sections are one sticky row of chips that scrolls sideways');
+  check(!nav.refresh && nav.footer && nav.mirrored,'phones: Refresh moves to the foot of the page and follows the header button');
+  check(nav.online && !nav.connection,'phones: Connected is hidden while online');
+  await page.locator('#refresh').evaluate(button=>button.disabled=true);
+  check(await page.waitForFunction(()=>document.querySelector('#refresh-footer').disabled).then(()=>true,()=>false),'the foot Refresh is disabled with the header one');
+  await page.locator('#refresh').evaluate(button=>button.disabled=false);
+  await page.waitForFunction(()=>!document.querySelector('#refresh-footer').disabled);
+  const navTarget=await page.locator('#section-nav a:not([hidden])').evaluateAll(links=>{
+    const folded=links.map(a=>document.querySelector(a.getAttribute('href'))).find(e=>e.tagName==='DETAILS');
+    if(!folded) return null;
+    folded.open=false;
+    return '#'+folded.id;
+  });
+  check(navTarget!==null,'a folded section is reachable from the chips');
+  await page.evaluate(()=>scrollTo(0,0));
+  await page.locator(`#section-nav a[href="${navTarget}"]`).click();
+  check(await page.locator(navTarget).evaluate(e=>e.open && e===document.activeElement),'a chip opens its folded section and moves focus there');
+  await page.waitForFunction(target=>{const top=document.querySelector(target).getBoundingClientRect().top,nav=document.querySelector('#section-nav').getBoundingClientRect();return top>=nav.bottom-1 || scrollY+innerHeight>=document.documentElement.scrollHeight-1;},navTarget);
+  check(await page.evaluate(target=>{const top=document.querySelector(target).getBoundingClientRect().top,nav=document.querySelector('#section-nav').getBoundingClientRect();return nav.top===0 && top>=nav.bottom-1;},navTarget),'the section lands below the stuck chips, not behind them');
+  await page.waitForTimeout(1200);
+  check(await page.locator(`#section-nav a[href="${navTarget}"]`).getAttribute('aria-current')==='location' && await page.locator('#section-nav a[aria-current]').count()===1,'the chip clicked stays the current one after the page scrolls');
+  check(await page.locator(`#section-nav a[href="${navTarget}"]`).evaluate(a=>{const r=a.getBoundingClientRect(),n=a.parentElement.getBoundingClientRect();return r.left>=n.left+16 && r.right<=n.right-16;}),'the current chip is scrolled well into the row, not cut at an edge');
+  await page.evaluate(()=>scrollTo(0,0));
+  await pause(200);
+  check(await page.locator(`#section-nav a[href="${navTarget}"]`).getAttribute('aria-current')==='location','the chip clicked stays current until the reader scrolls');
+  await page.mouse.move(195,500);
+  await page.mouse.wheel(0,400);
+  await page.mouse.wheel(0,-800);
+  await page.waitForFunction(()=>document.querySelector('#section-nav a[aria-current]')?.getAttribute('href')==='#listening');
+  check(true,'scrolling back to the top by hand makes Listening current');
+  await page.setViewportSize({width:1200,height:900});
   // Reproducible README images use feature discovery and sample state only.
   screenshotFeatures={schema:1,model:'bar91',name:'BAR 9.1',
     actions:await page.locator('[data-action]').evaluateAll(elements=>[...new Set([...elements.map(e=>e.dataset.action),'av_sync_set'])]),
@@ -754,6 +807,11 @@ try {
   await page.setViewportSize({width:1200,height:1050});
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#bass-offset').value==='-1.5' && !document.querySelector('#bass-offset-save').disabled);
+  for (const width of [1200,1240,1280,1024]) {
+    await page.setViewportSize({width,height:1050});
+    check(await page.locator('.segmented').evaluateAll(rows=>rows.filter(e=>e.getBoundingClientRect().height>0).every(e=>e.scrollWidth<=e.clientWidth+1)),'the six center levels show whole beside the section menu at '+width);
+  }
+  await page.setViewportSize({width:1200,height:1050});
   await populateMonitorHistory();
   await page.evaluate(()=>document.activeElement.blur());
   check(await page.locator('.battery,.sub-caption,.bass-caption').evaluateAll(labels=>labels.filter(e=>e.getBoundingClientRect().height>0).every(e=>{const a=e.getBoundingClientRect(),b=e.closest('.visualization').getBoundingClientRect();return a.left>=b.left && a.right<=b.right && a.top>=b.top && a.bottom<=b.bottom;})),'larger speaker labels remain inside the illustration without clipping');
@@ -804,6 +862,7 @@ try {
   await page.locator('#timer-explain summary').click();
   await page.locator('#timer-start').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
+  check((await page.locator('#section-nav [data-badge=timers]').textContent())==='1' && await page.locator('#section-nav a[href="#timer-panel"]').getAttribute('aria-label')==='Timers, 1 running','the Timers chip counts the running timers');
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.start',parameters:{text:'PATES',duration_s:600,countdown:true,sound:'unless_tv',sound_volume:10,ring_s:30}}),'start sends the folded text, the duration in seconds, the countdown choice and the sound (unless TV, volume at least 10, 30 s by default)');
   check(await page.locator('#timer-text').inputValue()==='','the name clears after a timer starts');
   await page.waitForFunction(()=>!document.querySelector('#timer-toast').hidden);
@@ -825,6 +884,7 @@ try {
   await page.locator('#timer-text').fill('');
   await page.locator('#timer-undo').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===0);
+  check(await page.locator('#section-nav [data-badge=timers]').isHidden() && await page.locator('#section-nav a[href="#timer-panel"]').getAttribute('aria-label')===null,'the count leaves the Timers chip with the last timer');
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.timer.cancel',parameters:{id:'t1'}}) && await page.locator('#timer-toast').isHidden(),'Undo cancels the timer just started');
   await page.locator('.timer-recent-item').click();
   await page.waitForFunction(()=>document.querySelectorAll('.timer-item').length===1);
@@ -921,6 +981,7 @@ try {
   await page.reload();
   await page.waitForFunction(()=>!document.querySelector('#messages-panel').hidden);
   const msgs=()=>state.extensions['bar91.display-message'].messages;
+  check(await page.locator('#section-nav [data-badge=messages]').isHidden() && await page.locator('#section-nav a[href="#messages-panel"]').isVisible(),'the Messages chip appears with its panel, without a count while nothing is shown');
   check(await page.locator('#messages-current').isHidden() && await page.locator('#message-send').isDisabled() && (await page.locator('#message-options-summary').textContent())==='Until cleared' && await page.locator('#message-stop-on-key').isChecked(),'messages: nothing on the bar, Send waits for a text; by default until cleared, or a key on the JBL remote');
   await page.locator('#message-input').fill('Frigo fermé');
   check((await page.locator('#message-preview').textContent())==='The bar shows: FRIGO FERME' && /^Shows until cleared, or until someone presses a key on the JBL remote, after the bar's own messages/.test(await page.locator('#message-explain').textContent()),'the text is previewed as the bar shows it, with what will happen');
@@ -943,6 +1004,7 @@ try {
   check((await page.locator('#message-options-summary').textContent())==='For 15 min' && await page.locator('#message-passes-row').isHidden(),'how long: for a while, 15 min, the count hidden');
   await page.locator('#message-send').click();
   await page.waitForFunction(()=>document.querySelectorAll('.message-item').length===2);
+  check((await page.locator('#section-nav [data-badge=messages]').textContent())==='2' && await page.locator('#section-nav a[href="#messages-panel"]').getAttribute('aria-label')==='Messages, 2 messages','the Messages chip counts the messages on the bar');
   check(JSON.stringify(lastPayload)===JSON.stringify({action:'bar91.display-message.show',parameters:{text:'Colis livre',id:'colis',duration_s:900}}),'a named message for 15 min sends its id and duration; without the key option, no stop_on_key');
   check(/^colis · (15:00|14:5\d) left · waiting$/.test(await page.locator('.message-item').nth(1).locator('.message-detail').textContent()),'a named message waiting its turn, with its time left');
   await page.locator('[data-mode="forever"]').click();

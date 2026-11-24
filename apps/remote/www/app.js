@@ -11,6 +11,7 @@ import {createMessages} from './components/messages.js';
 import {createRestart} from './components/restart.js';
 import {createAdvanced} from './components/advanced.js';
 import {createSpeakers} from './components/speakers.js';
+import {createNav} from './components/nav.js';
 
 const $ = id => document.getElementById(id);
 const buttons = [...document.querySelectorAll('[data-action]')];
@@ -32,6 +33,7 @@ const advanced=createAdvanced($('advanced'),$('room-setup'));
 const speakers=createSpeakers($('speaker-view'));
 const messages=createMessages($('messages-panel'),{request:action=>{if(!csrf||!online||queue.length>=8)return false;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();return true;}});
 const restart=createRestart($('restart-panel'),{request:action=>{if(!csrf||!online||queue.length>=8)return false;queue.push(action);if(active){render();feedback(pendingMessage(),'pending');}else void pump();return true;}});
+const nav=createNav($('section-nav'));
 const components=[bluetooth,sound,playback,system,equalizer,details,advanced,bassOffset,speakers,timer,messages,restart];
 let syncTimer=null;
 // Readiness shared by the shell and every component. A control sent from
@@ -114,6 +116,7 @@ function render() {
     $('summary').textContent = s.automation.status === 'APPLYING_STANDARD' || (s.mode === 'Smart' && s.automation.remembered_mode !== 'Smart') ? 'Returning to Standard after wake… controls return in a few seconds.' : 'Checking the sound mode after wake… controls return in a few seconds.';
   }
   capabilities.apply();
+  nav.render(context()); // last: it follows the sections shown or hidden above
 }
 function updateSync() {
   if (stream?.readyState === EventSource.OPEN && online) { $('last-seen').textContent = 'Live updates'; return; }

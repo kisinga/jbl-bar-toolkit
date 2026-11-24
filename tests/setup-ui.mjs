@@ -198,7 +198,7 @@ try {
     ["PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB", "update"],
   ]) {
     reportStatus = status;
-    await page.locator("#refresh").click();
+    await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
     await page.waitForFunction(status => document.querySelector("#reports-text").textContent.includes(status), status);
     if (await page.locator("#use-recommendation").isVisible()) await page.locator("#use-recommendation").click();
     assert.equal(await page.locator("#action").inputValue(), action);
@@ -208,14 +208,14 @@ try {
   await page.locator("#recover-recommendation").click();
   assert.equal(await page.locator("#action").inputValue(), "uninstall");
   reportStatus = "UNRECOGNIZED_FAILURE";
-  await page.locator("#refresh").click();
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(() => document.querySelector("#reports-text").textContent.includes("UNRECOGNIZED_FAILURE"));
   assert.equal(await page.locator("#use-recommendation").isHidden(), true);
   assert.match(await page.locator("#guidance-text").textContent(), /before retrying/);
   assert.equal(requests.filter(r => r.path === "/api/prepare").length, beforeRecommendations);
   replaceable = true;
   reportStatus = "CHECK_BLOCKED_READ_CHECKS";
-  await page.locator("#refresh").click();
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(() => document.querySelector("#guidance-text").textContent.includes("replaced automatically"));
   await page.locator("#use-recommendation").click();
   assert.equal(await page.locator("#action").inputValue(), "reinstall");
@@ -224,11 +224,11 @@ try {
   replaceable = false;
   reportStatus = null;
   nativeFailure = true;
-  await page.locator("#refresh").click();
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(() => document.getElementById("drive-status").textContent.includes("turn the soundbar fully on before installation"));
   assert.equal(await page.locator("#reports").evaluate(el => el.open), true);
   nativeFailure = false;
-  await page.locator("#refresh").click();
+  await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(() => !document.getElementById("drive-status").textContent.includes("turn the soundbar fully on before installation"));
   await page.locator("#all-controls").click();
   await page.locator("#action").selectOption("check");

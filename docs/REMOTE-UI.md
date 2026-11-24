@@ -6,7 +6,8 @@ against the [frozen baseline](../tests/fixtures/remote-ui-baseline.json) by
 
 | Location | Existing features retained |
 | --- | --- |
-| Header | Model/home, connection, refresh, power/standby |
+| Header | Model/home, connection, refresh, power/standby; on phones, connection only when not live and Refresh at the page foot |
+| Section menu | Links to Listening, Sound, Front EQ, Timers, Messages, Room setup and System, each hidden with its section; counts for running timers and messages on the bar, On for an applied Front EQ; opens a folded section and marks the one in view |
 | Speaker view | Independent batteries/meters, thresholds and unavailable states; collective docking |
 | Source | TV/ARC, HDMI, Bluetooth; peer, discovery and pairing |
 | Volume | Tap/hold, keyboard, mute, pending values and queue cancellation |
@@ -26,7 +27,10 @@ Experimental front-display [messages and clock](DISPLAY_MESSAGES.md) and
 [timers](TIMERS.md) are implemented for the qualified Bar 9.1 native route.
 Their device/firmware guards still apply; this does not qualify combined installation.
 
-**Layout:** equal sound columns at ≥900px; stacked below. Audio sync, Bass offset
+**Layout:** the section menu is a sticky column beside the panels at ≥1200px and a
+sticky row of chips below. Equal sound columns at ≥900px; stacked below. Level rows
+put their buttons under the label where columns are narrow (900–1023px, and
+1200–1279px beside the menu). Audio sync, Bass offset
 and System monitor start open. Other disclosures start closed. Updates preserve
 manual disclosure choices; reload restores defaults. EQ and offset are gated independently.
 Apricot highlights actions, violet EQ and teal diagnostics; labels and selection

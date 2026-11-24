@@ -98,7 +98,7 @@ try {
   offline=true;
   await page.waitForFunction(()=>document.querySelector('#connection-label').textContent==='Offline');
   check(await page.locator('#bass-offset-save').isDisabled(),'offline save blocked');
-  offline=false;await page.locator('#refresh').click();
+  offline=false;await page.locator('#refresh:visible, #refresh-footer:visible').first().click();
   await page.waitForFunction(()=>!document.querySelector('#bass-offset').disabled);
   check(calls.length===3,'disconnect does not replay failed save');
   state.power='On';state.extensions['fixture.bass']={offset_db:-3,status:'waiting'};
