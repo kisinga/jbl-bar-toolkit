@@ -6,6 +6,7 @@ generated from that section plus the installation and recovery instructions.
 
 ## Unreleased
 
+- Fix Save EQ in standby, Smart Mode or on another audio route while an earlier EQ is still applied, for example after turning the bar off from the remote on a route where its EQ could not be removed. It failed with "Custom EQ is still active on this input … try again"; the new curve is now kept, the earlier EQ is removed once Standard audio plays, and the new one is applied.
 - Explain how to get out of `PACKAGE_VERSION_CONFLICT_USE_ORIGINAL_USB` without the original USB or recovery ZIP: **Install / update everything** adopts a newer package and keeps settings, and **Uninstall** or a `RECOVER` marker works with any package. Setup now recommends both when it reads that status.
 - Start SSH at boot even when the web remote fails to start, so the bar stays reachable for repair; the boot status still reports the remote failure.
 - Start the web remote when `remote.pid` is stale after a reboot or power loss (the number now belongs to another process, or the file is empty) instead of failing the boot.

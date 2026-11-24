@@ -134,6 +134,42 @@ func TestKeptEQStatusShowsTheWaitingEQ(t *testing.T) {
 	}
 }
 
+// An EQ chosen while another is still applied and cannot be reset (standby
+// after a power-off on an unqualified route) used to be refused with "Custom
+// EQ is still active on this input ... try again". It is kept, shown as the
+// EQ waiting, and the applied one is marked for removal.
+func TestKeepFrontEQLaterReplacesTheAppliedEQ(t *testing.T) {
+	saved := eqKeepPath
+	eqKeepPath = filepath.Join(t.TempDir(), "front-eq.json")
+	defer func() { eqKeepPath = saved }()
+	applied, chosen := [5]float64{-2, 0, 0, 0, 0}, [5]float64{-3, -1, 0, 0, -1}
+	d := &device{}
+	d.eq.active, d.eq.gains, d.eq.problem = true, applied, eqActiveProblem
+	d.eq.keep, d.eq.kept = true, applied
+	d.keepFrontEQLater(chosen, "standby")
+	if !d.eq.offPending || !d.eq.keep || d.eq.kept != chosen {
+		t.Fatalf("offPending %v keep %v kept %v", d.eq.offPending, d.eq.keep, d.eq.kept)
+	}
+	if k, ok := loadKeptEQ(eqKeepPath); !ok || k != chosen {
+		t.Fatalf("kept file %v %v", k, ok)
+	}
+	out := d.frontEQStatus(state{Available: true, Power: "Standby"})
+	if out.Enabled || !out.Kept || out.Status != "waiting" || out.Error != eqKeepWaiting || [5]float64(out.Gains) != chosen {
+		t.Fatalf("standby status %+v", out)
+	}
+	// Choosing the applied EQ again keeps it: nothing to remove.
+	d.keepFrontEQLater(applied, "standby")
+	if d.eq.offPending || d.eq.kept != applied {
+		t.Fatalf("offPending %v kept %v", d.eq.offPending, d.eq.kept)
+	}
+	// No EQ applied: only kept, as before.
+	d.eq.active = false
+	d.keepFrontEQLater(chosen, "Smart Mode")
+	if d.eq.offPending || d.eq.kept != chosen {
+		t.Fatalf("offPending %v kept %v", d.eq.offPending, d.eq.kept)
+	}
+}
+
 // A failed reset used to be retried, and reported as a control, every
 // monitor tick: the page flashed "Another control is running" every two
 // seconds. It is retried only once the native state changes.
@@ -187,7 +223,15 @@ func TestEQDeferFor(t *testing.T) {
 		{"applicable now", "", true, "On", "Standard", false, nil, ""},
 		{"other read error", "", true, "On", "Standard", false, other, ""},
 		{"pending problem", "EQ reset pending: x", true, "Standby", "Smart", false, nil, ""},
-		{"applied EQ", "", true, "On", "Smart", true, nil, ""},
+		{"pending problem with an applied EQ", "EQ reset pending: x", true, "Standby", "Smart", true, nil, ""},
+		// An EQ still applied, even one whose reset failed on that route,
+		// does not prevent choosing another for later (keepFrontEQLater).
+		{"applied EQ in standby", "", true, "Standby", "Standard", true, nil, "standby"},
+		{"applied EQ not reset before standby", eqActiveProblem, true, "Standby", "Standard", true, nil, "standby"},
+		{"applied EQ in Smart Mode", "", true, "On", "Smart", true, nil, "Smart Mode"},
+		{"applied EQ on another route", eqActiveProblem, true, "On", "Standard", true, errEQRoute, "this audio route"},
+		{"reset deferred on another route", eqDeferredProblem, true, "On", "Standard", true, errEQRoute, "this audio route"},
+		{"applied EQ, another one applicable now", "", true, "On", "Standard", true, nil, ""},
 		{"state unavailable", "", false, "", "", false, nil, ""},
 	} {
 		if got := eqDeferFor(c.problem, c.available, c.power, c.mode, c.active, c.routeErr); got != c.want {

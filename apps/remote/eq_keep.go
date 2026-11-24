@@ -174,11 +174,19 @@ func (d *device) followFrontEQ(ctx context.Context, report func(string)) {
 }
 
 // eqDeferFor is why a new EQ cannot be applied now but can be kept for
-// later, or "" when it must be applied (or refused) now. Problems, a reset
-// pending on an applied EQ and unreadable states are never deferred.
+// later, or "" when it must be applied (or refused) now. An EQ still applied,
+// or one whose reset waits for Standard Bluetooth audio (a route problem),
+// does not prevent it: the monitor removes the old one once the route allows
+// and then applies the new one (keepFrontEQLater). Other problems and
+// unreadable states are never deferred.
+//
+// Before, an EQ still applied when the bar went to standby (its reset had
+// failed on that route) made Save EQ fail in standby with "Custom EQ is
+// still active on this input ... try again", while the page said the EQ
+// would be applied when Standard audio plays.
 func eqDeferFor(problem string, available bool, power, mode string, active bool, routeErr error) string {
 	switch {
-	case problem != "" || !available || active:
+	case !available || (problem != "" && !eqRouteProblem(problem)):
 		return ""
 	case power != "On":
 		return "standby"
@@ -193,7 +201,7 @@ func eqDeferFor(problem string, available bool, power, mode string, active bool,
 // eqDeferReason applies eqDeferFor to the bar now. Callers hold d.mu.
 func (d *device) eqDeferReason() string {
 	m := &d.eq
-	if m.problem != "" || m.active || eqParserPayload == "" {
+	if eqParserPayload == "" || (m.problem != "" && !eqRouteProblem(m.problem)) {
 		return ""
 	}
 	s := d.snapshotCurrent()
@@ -202,6 +210,24 @@ func (d *device) eqDeferReason() string {
 		_, routeErr = d.readEQNative()
 	}
 	return eqDeferFor(m.problem, s.Available, s.Power, s.Mode, m.active, routeErr)
+}
+
+// keepFrontEQLater keeps an EQ chosen while it cannot be applied now. An
+// EQ still applied with other gains is marked for removal: the monitor
+// resets it once Standard audio plays (followFrontEQ), and the keeper then
+// applies this one, which waits for no EQ to be applied (keepFrontEQ).
+// Choosing the applied EQ again cancels a removal asked before. Callers
+// hold d.mu.
+func (d *device) keepFrontEQLater(gains [5]float64, reason string) {
+	m := &d.eq
+	d.keepFrontEQGains(gains)
+	m.keepStable = 0
+	m.offPending = m.active && m.gains != gains
+	if m.offPending {
+		m.note("Front EQ saved (%s); it replaces the applied one when Standard audio plays", reason)
+	} else {
+		m.note("Front EQ saved (%s); it is applied when Standard audio plays", reason)
+	}
 }
 
 // eqBlockDiff counts the bytes that differ between two native blocks and

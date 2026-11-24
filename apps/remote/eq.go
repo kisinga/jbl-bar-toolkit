@@ -96,9 +96,11 @@ type eqController struct {
 	// followBlocked is the native state on which the monitor's last reset
 	// failed: it is not retried (nor reported) until that state changes.
 	followBlocked string
-	// offPending: the owner turned the EQ off while it could not be reset
-	// (standby, Smart Mode, another route). It is reported off, and the
-	// monitor removes it once the bar plays Standard audio again.
+	// offPending: the owner turned the EQ off, or chose another one, while
+	// it could not be reset (standby, Smart Mode, another route). It is
+	// reported off (or as the EQ chosen, waiting), and the monitor removes it
+	// once the bar plays Standard audio again; the keeper then applies the
+	// EQ chosen, if any.
 	offPending bool
 }
 
@@ -245,8 +247,9 @@ func (d *device) frontEQStatus(s state) *frontEQState {
 	}
 	if m.keep {
 		out.Kept = true
-		if !m.active {
-			// Show the kept EQ while it waits to be applied again.
+		if !m.active || m.offPending {
+			// Show the kept EQ while it waits to be applied again, also when
+			// it replaces one still applied (keepFrontEQLater).
 			out.Gains = append([]float64(nil), m.kept[:]...)
 			out.Status, out.Error = "waiting", eqKeepWaiting
 		}
@@ -543,12 +546,12 @@ func (d *device) eqAction(ctx context.Context, action string, gains []float64) (
 		// it and let the keeper apply it once Standard audio plays, instead
 		// of refusing an EQ the owner can always choose.
 		if reason := d.eqDeferReason(); reason != "" && bands != [5]float64{} && validKeptGains(bands) {
-			d.keepFrontEQGains(bands)
-			d.eq.keepStable = 0
-			d.eq.note("Front EQ saved (%s); it is applied when Standard audio plays", reason)
+			d.keepFrontEQLater(bands, reason)
 			return d.snapshotCurrent(), nil
 		}
 		if e = d.applyFrontEQ(ctx, bands); e == nil {
+			// Applied now: nothing older is left to remove.
+			d.eq.offPending = false
 			d.keepFrontEQGains(bands)
 		}
 	} else {
