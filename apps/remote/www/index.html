@@ -7,7 +7,7 @@
 <symbol id="i-tv" viewBox="0 0 24 24"><rect height="13" rx="2" width="18" x="3" y="4"></rect><path d="M8 21h8m-4-4v4"></path></symbol>
 <symbol id="i-hdmi" viewBox="0 0 24 24"><path d="M3 6h18v9l-4 4H7l-4-4V6Zm4 4h10M9 14h6"></path></symbol>
 <symbol id="i-bluetooth" viewBox="0 0 24 24"><path d="m7 7 10 10-5 4V3l5 4L7 17"></path></symbol>
-<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M3 8a15 15 0 0 1 18 0M6 12a10 10 0 0 1 12 0m-9 4a5 5 0 0 1 6 0"></path><circle cx="12" cy="20" r=".6"></circle></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M3 8a15 15 0 0 1 18 0M6 12a10 10 0 0 1 12 0m-9 4a5 5 0 0 1 6 0"></path><circle cx="12" cy="20" r=".6"></circle></symbol><symbol id="i-ethernet" viewBox="0 0 24 24"><path d="M4 5h16v10h-4v4H8v-4H4z"></path><path d="M8.5 9v2.5M12 9v2.5M15.5 9v2.5"></path></symbol>
 <symbol id="i-cast" viewBox="0 0 24 24"><path d="M3 9V5h18v14h-9M3 14a5 5 0 0 1 5 5m-5-9a9 9 0 0 1 9 9"></path><circle cx="3" cy="19" r=".5"></circle></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"></path></symbol>
@@ -92,13 +92,17 @@
 </div>
 <div class="monitor-secondary">
 <div class="storage-metric"><div class="metric-heading"><h3>Storage</h3><span id="storage-detail">—</span></div><progress aria-label="Storage used" hidden="" id="storage-progress" max="100" value="0"></progress><p id="storage-value">Usage not reported</p></div>
-<div class="network-metric"><h3>Wi-Fi traffic</h3><div class="traffic-rates"><span><i aria-hidden="true">↓</i><strong id="network-receive">—</strong><small>received</small></span><span><i aria-hidden="true">↑</i><strong id="network-transmit">—</strong><small>sent</small></span></div></div>
+<div class="network-metric"><h3 id="traffic-heading">Wi-Fi traffic</h3><div class="traffic-rates"><span><i aria-hidden="true">↓</i><strong id="network-receive">—</strong><small>received</small></span><span><i aria-hidden="true">↑</i><strong id="network-transmit">—</strong><small>sent</small></span></div></div>
 </div>
 <dl class="system-vitals"><div><dt>Uptime</dt><dd id="system-uptime">—</dd></div><div><dt>Load <span>1 / 5 / 15 min</span></dt><dd id="system-load">—</dd></div><div hidden="" id="system-processes-row"><dt>Processes</dt><dd id="system-processes">—</dd></div><div hidden="" id="system-temperature-row"><dt>Temperature</dt><dd id="system-temperature">—</dd></div></dl>
 <p class="system-note" id="system-note">Live vitals appear when the soundbar reports them.</p>
 <section aria-labelledby="wifi-heading" class="wifi-panel" id="wifi-panel">
 <div class="network-heading"><span class="network-icon"><svg><use href="#i-wifi"></use></svg></span><div><h3 id="wifi-heading">Wi-Fi connection</h3><p id="wifi-name">Checking Wi-Fi</p><p id="wifi-status">Reading network status…</p></div></div>
 <div class="network-address"><a class="local-address" hidden="" href="http://jbl.local" id="local-address">jbl.local <span aria-hidden="true">↗</span></a><div class="network-details"><span id="wifi-ip">—</span><span id="wifi-signal"></span></div><p hidden="" id="hotspot-status"></p></div>
+</section>
+<section aria-labelledby="ethernet-heading" class="wifi-panel ethernet-panel" hidden="" id="ethernet-panel">
+<div class="network-heading"><span class="network-icon"><svg><use href="#i-ethernet"></use></svg></span><div><h3 id="ethernet-heading">Ethernet connection</h3><p id="ethernet-name">Checking the cable</p><p id="ethernet-status">Reading network status…</p></div></div>
+<div class="network-address"><a class="local-address" hidden="" href="http://jbl.local" id="ethernet-local-address">jbl.local <span aria-hidden="true">↗</span></a><div class="network-details"><span id="ethernet-ip">—</span><span id="ethernet-link"></span></div></div>
 </section>
 <section aria-labelledby="restart-heading" class="system-restart" data-component="reboot" hidden="" id="restart-panel"><div><h3 id="restart-heading">Restart the soundbar</h3><p id="restart-note">Only if it stops responding. The sound stops; the bar is back in about a minute, and this page reconnects by itself.</p></div><button class="restart-button" id="restart" type="button">Restart…</button></section>
 </details><div class="more-details">

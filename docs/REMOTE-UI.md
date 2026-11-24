@@ -17,7 +17,7 @@ against the [frozen baseline](../tests/fixtures/remote-ui-baseline.json) by
 | Front EQ | Status badge (Active, Waiting with the reason, Updating, Off); eight presets, five −6..0 dB bands in 0.5 dB steps, curve, draft, one button (Apply EQ, Save EQ, Turn off EQ for Original, or Cancel saved EQ while a saved curve waits), kept EQ and error states; Save EQ while it cannot apply (standby, Smart Mode, unsupported route) |
 | Bass offset | −3..+3 dB in 0.5 dB steps, explicit Save, startup/status/errors and permitted standby saves |
 | Room setup | Two-stage calibration, subwoofer pairing, instructions and operation guards |
-| System monitor | CPU/RAM history, storage, traffic, uptime/load/processes/temperature, Wi-Fi and local/hotspot addresses |
+| System monitor | CPU/RAM history, storage, traffic of the link in use, uptime/load/processes/temperature, Wi-Fi and Ethernet connections (cable, address, speed, duplex), local/hotspot addresses |
 | Details/help/footer | Device identity/uptime, automation, read-only Cast tone settings, tips, feedback and freshness |
 
 **Packaging:** default Go setup/CI builds include the verified project-owned EQ

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -175,4 +176,46 @@ func TestEventStreamInitialAndChangedState(t *testing.T) {
 		t.Fatal("changed state not pushed", s)
 	}
 	cancel()
+}
+
+// The wired port is read from sysfs: a link reports its speed and duplex,
+// an unplugged port only that it exists, a missing one nothing.
+func TestEthernetParsing(t *testing.T) {
+	root := t.TempDir()
+	port := func(files map[string]string) {
+		dir := filepath.Join(root, "eth0")
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, value := range files {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(value+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if s := parseEthernet(root, "eth0"); s.Available || s.Connected {
+		t.Fatalf("missing port: %+v", s)
+	}
+	port(map[string]string{"carrier": "1", "operstate": "up", "speed": "100", "duplex": "full"})
+	if s := parseEthernet(root, "eth0"); !s.Available || !s.Connected || s.SpeedMbps == nil || *s.SpeedMbps != 100 || s.Duplex != "full" {
+		t.Fatalf("linked port: %+v", s)
+	}
+	// Unplugged: carrier 0; the driver may still report an old speed.
+	port(map[string]string{"carrier": "0", "operstate": "down", "speed": "100", "duplex": "full"})
+	if s := parseEthernet(root, "eth0"); !s.Available || s.Connected || s.SpeedMbps != nil || s.Duplex != "" {
+		t.Fatalf("unplugged port: %+v", s)
+	}
+	// Administratively down: carrier cannot be read.
+	port(map[string]string{"operstate": "down"})
+	if s := parseEthernet(root, "eth0"); !s.Available || s.Connected {
+		t.Fatalf("down port: %+v", s)
+	}
+	// Link with an unknown speed and duplex.
+	port(map[string]string{"carrier": "1", "operstate": "unknown", "speed": "-1", "duplex": "unknown"})
+	if s := parseEthernet(root, "eth0"); !s.Connected || s.SpeedMbps != nil || s.Duplex != "" {
+		t.Fatalf("unknown link: %+v", s)
+	}
 }

@@ -57,6 +57,17 @@ func TestNetworkRatesRejectResetsAndUseOnlyWiFi(t *testing.T) {
 	if networkUsage(nil, n, 2) != nil || networkUsage(n, &networkCounters{0, 0}, 2) != nil || networkUsage(n, n, 0) != nil || parseNetwork([]byte("wlan0: bad")) != nil {
 		t.Fatal("missing/reset network accepted")
 	}
+	// The wired port is counted on its own, never mixed with Wi-Fi.
+	wired := append(sample, []byte("  eth0: 5000 9 0 0 0 0 0 0 7000 9 0 0 0 0 0 0\n")...)
+	if e := parseInterfaceCounters(wired, "eth0"); e == nil || e.receive != 5000 || e.transmit != 7000 {
+		t.Fatalf("eth0 %+v", e)
+	}
+	if w := parseNetwork(wired); w == nil || w.receive != 1000 || w.transmit != 3000 {
+		t.Fatalf("wlan0 with eth0 %+v", w)
+	}
+	if parseInterfaceCounters(sample, "eth0") != nil {
+		t.Fatal("eth0 counters without eth0")
+	}
 }
 func TestStorageDistinguishesAvailableAndFreeBlocks(t *testing.T) {
 	fs := syscall.Statfs_t{Bsize: 4096, Blocks: 100, Bfree: 40, Bavail: 35}

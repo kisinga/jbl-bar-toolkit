@@ -73,8 +73,14 @@ export function createSystem(root) {
     $('storage-progress').value = storage ? storage.used_bytes / storage.total_bytes * 100 : 0;
     $('storage-detail').textContent = storage ? Math.round(storage.used_bytes / storage.total_bytes * 100) + '% used' : '—';
     $('storage-value').textContent = storage ? monitorBytes(storage.available_bytes) + ' free of ' + monitorBytes(storage.total_bytes) : 'Usage not reported';
-    $('network-receive').textContent = monitorRate(data.network?.receive_bytes_per_second);
-    $('network-transmit').textContent = monitorRate(data.network?.transmit_bytes_per_second);
+    // The firmware drops Wi-Fi while a cable is connected: show the traffic
+    // of the link in use.
+    const ethernet = s.ethernet || {};
+    const wired = ethernet.connected === true && !s.wifi?.connected;
+    const traffic = wired ? data.ethernet_network : data.network;
+    $('traffic-heading').textContent = wired ? 'Ethernet traffic' : 'Wi-Fi traffic';
+    $('network-receive').textContent = monitorRate(traffic?.receive_bytes_per_second);
+    $('network-transmit').textContent = monitorRate(traffic?.transmit_bytes_per_second);
     $('system-uptime').textContent = monitorUptime(data.uptime_seconds);
     $('system-load').textContent = Array.isArray(data.load_average) && data.load_average.length === 3 && data.load_average.every(finiteNonnegative) ? data.load_average.map(value => value.toFixed(2)).join(' / ') : '—';
     $('system-processes-row').hidden = !Number.isSafeInteger(data.processes) || data.processes < 0;
@@ -86,13 +92,23 @@ export function createSystem(root) {
     $('wifi-name').textContent=wifi.available ? wifi.connected ? wifi.ssid || 'Connected network' : 'Not connected' : 'Status unavailable';
     const signal = wifi.signal_dbm;
     const quality = signal == null ? '' : signal >= -55 ? 'Strong signal' : signal >= -67 ? 'Good signal' : signal >= -75 ? 'Fair signal' : 'Weak signal';
-    $('wifi-status').textContent=wifi.connected ? ['Connected', quality].filter(Boolean).join(' · ') : wifi.hotspot_ip ? 'Setup hotspot is active' : wifi.available ? 'Waiting for a Wi-Fi connection' : 'The Wi-Fi service has not reported its state.';
+    $('wifi-status').textContent=wifi.connected ? ['Connected', quality].filter(Boolean).join(' · ') : wifi.hotspot_ip ? 'Setup hotspot is active' : wired ? 'Not in use while the Ethernet cable is connected' : wifi.available ? 'Waiting for a Wi-Fi connection' : 'The Wi-Fi service has not reported its state.';
     $('wifi-ip').textContent=wifi.ip || 'No network address';
-    $('local-address').hidden = s.hostname !== 'jbl.local';
+    // jbl.local sits with the connection in use.
+    $('local-address').hidden = s.hostname !== 'jbl.local' || wired;
+    $('ethernet-local-address').hidden = s.hostname !== 'jbl.local' || !wired;
     const band=wifi.frequency_mhz ? (wifi.frequency_mhz>=5925?'6 GHz':wifi.frequency_mhz>=4900?'5 GHz':'2.4 GHz') : '';
     $('wifi-signal').textContent=[wifi.signal_dbm==null?'':wifi.signal_dbm+' dBm',band].filter(Boolean).join(' · ');
     $('hotspot-status').hidden=!wifi.hotspot_ip;
     $('hotspot-status').textContent=wifi.hotspot_ip ? 'Local hotspot control: http://' + wifi.hotspot_ip : '';
+    // Ethernet port (ETHERNET on the back): shown once the remote reports it.
+    $('ethernet-panel').hidden = ethernet.available !== true;
+    const speed = Number.isSafeInteger(ethernet.speed_mbps) && ethernet.speed_mbps > 0 ? (ethernet.speed_mbps >= 1000 && ethernet.speed_mbps % 1000 === 0 ? ethernet.speed_mbps / 1000 + ' Gbit/s' : ethernet.speed_mbps + ' Mbit/s') : '';
+    const duplex = ethernet.duplex === 'full' ? 'full duplex' : ethernet.duplex === 'half' ? 'half duplex' : '';
+    $('ethernet-name').textContent = ethernet.connected ? 'Wired network' : 'No cable connected';
+    $('ethernet-status').textContent = ethernet.connected ? 'Connected' : 'Plug a network cable into the ETHERNET port to use it instead of Wi-Fi.';
+    $('ethernet-ip').textContent = ethernet.connected ? ethernet.ip || 'No network address yet' : '—';
+    $('ethernet-link').textContent = ethernet.connected ? [speed, duplex].filter(Boolean).join(' · ') : '';
 
   }
 

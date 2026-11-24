@@ -326,8 +326,11 @@ func castPlayServed(parent context.Context, sound []byte, contentType string, ri
 	defer server.Close()
 	port := listener.Addr().(*net.TCPAddr).Port
 	hosts := []string{"127.0.0.1"}
-	if ip := readWiFi().IP; ip != "" {
-		hosts = append(hosts, ip)
+	// The bar's LAN address, by Wi-Fi or by cable, if Cast refuses 127.0.0.1.
+	for _, ip := range []string{readWiFi().IP, readEthernet().IP} {
+		if ip != "" {
+			hosts = append(hosts, ip)
+		}
 	}
 	var last error
 	for _, host := range hosts {
