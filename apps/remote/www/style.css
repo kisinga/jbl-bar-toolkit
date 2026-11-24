@@ -380,6 +380,7 @@ button:disabled,select:disabled,input:disabled{opacity:.55}
 .nav-badge{padding:1px 8px;border-radius:10px;background:#f1ab8524;color:var(--orange);font-size:var(--font-caption);font-weight:700;line-height:1.5}
 .nav-badge[data-badge=eq]{background:#c1b0ed24;color:var(--violet)}
 .nav-badge[data-badge=messages]{background:#8ecfc624;color:var(--teal)}
+.nav-badge[data-badge=eq][data-state=waiting],.nav-badge[data-badge=eq][data-state=updating]{background:#ffffff10;color:var(--muted)}
 .section-nav a[aria-current] .nav-badge{background:#14171e33;color:var(--bg)}
 #listening,#sound-panel,#eq-panel,#timer-panel,#messages-panel,#room-setup,#system-panel{scroll-margin-top:76px}
 .footer-refresh{display:none}
@@ -400,5 +401,6 @@ main>header{grid-column:1/-1}
 .section-nav a[aria-current] .nav-badge{background:#f1ab8524;color:var(--orange)}
 .section-nav a[aria-current] .nav-badge[data-badge=eq]{background:#c1b0ed24;color:var(--violet)}
 .section-nav a[aria-current] .nav-badge[data-badge=messages]{background:#8ecfc624;color:var(--teal)}
+.section-nav a[aria-current] .nav-badge[data-badge=eq][data-state=waiting],.section-nav a[aria-current] .nav-badge[data-badge=eq][data-state=updating]{background:#ffffff10;color:var(--muted)}
 #listening,#sound-panel,#eq-panel,#timer-panel,#messages-panel,#room-setup,#system-panel{scroll-margin-top:24px}}
 @media(min-width:1600px){main{max-width:1480px}}

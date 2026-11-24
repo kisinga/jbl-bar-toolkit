@@ -79,7 +79,14 @@ export function createNav(nav, {doc = document, win = window} = {}) {
       const n = (state?.messages || []).length;
       return n ? [String(n), n === 1 ? '1 message' : n + ' messages'] : null;
     }
-    if (name === 'eq') return state?.eq?.enabled === true ? ['On', 'on'] : null;
+    if (name === 'eq') {
+      // The panel's own status badge, rendered just before: "On" only while
+      // the EQ is heard, so the menu never says On when the panel says
+      // Waiting (standby, Smart Mode, another audio route).
+      const panel = doc.getElementById('eq-badge');
+      const kind = panel && !panel.hidden ? panel.dataset.state : 'off';
+      return {active: ['On', 'on'], waiting: ['Waiting', 'waiting to apply'], updating: ['Updating', 'updating']}[kind] || null;
+    }
     return null;
   }
 
@@ -96,6 +103,7 @@ export function createNav(nav, {doc = document, win = window} = {}) {
         const value = badge(mark.dataset.badge, context.state);
         mark.hidden = !value;
         mark.textContent = value ? value[0] : '';
+        mark.dataset.state = value ? value[1].split(' ')[0] : '';
         // Read as "Timers, 2 running" rather than "Timers 2".
         if (value) link.setAttribute('aria-label', link.firstChild.textContent + ', ' + value[1]);
         else link.removeAttribute('aria-label');
