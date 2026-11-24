@@ -14,7 +14,7 @@ import (
 // bar91ActionAliases maps the v1 action names to the namespaced extension
 // actions. Execute and the reply-timeout policy both resolve through it.
 var bar91ActionAliases = map[string]string{
-	"eq_apply": "bar91.front-eq.apply", "eq_reset": "bar91.front-eq.reset",
+	"eq_apply": "bar91.front-eq.apply", "eq_reset": "bar91.front-eq.reset", "eq_cancel": "bar91.front-eq.cancel",
 	"center_next":     "bar91.center-level.next",
 	"display_message": "bar91.display-message.show", "display_cancel": "bar91.display-message.cancel",
 	"display_clock": "bar91.display-clock.set",
@@ -58,7 +58,7 @@ func (r *remote) registerBar91Extensions() error {
 	}
 	if err := r.extensions.Register(extension.Module[state]{
 		Descriptor: extension.Descriptor{ID: "bar91.front-eq", Component: "front-eq", Name: "Front EQ", Model: "bar91", Included: eqParserPayload != "", Experimental: true, Reason: reason},
-		Actions:    map[string]extension.Handler[state]{"bar91.front-eq.apply": eq("eq_apply"), "bar91.front-eq.reset": eq("eq_reset")},
+		Actions:    map[string]extension.Handler[state]{"bar91.front-eq.apply": eq("eq_apply"), "bar91.front-eq.reset": eq("eq_reset"), "bar91.front-eq.cancel": eq("eq_cancel")},
 		Run:        r.monitorFrontEQ,
 		Project: func(s state) any {
 			if s.EQ == nil {

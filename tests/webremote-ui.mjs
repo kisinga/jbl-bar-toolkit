@@ -7,6 +7,7 @@ const {chromium} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = new URL('../', import.meta.url);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const systemFixture = () => ({sample:1,cpu_percent:18.2,cpu_cores:2,load_average:[0.21,0.14,0.09],memory:{total_bytes:268435456,available_bytes:146800640,used_bytes:121634816},storage:{total_bytes:134217728,available_bytes:100663296,used_bytes:33554432},network:{receive_bytes_per_second:16384,transmit_bytes_per_second:1536},uptime_seconds:90300,processes:64,temperature_c:46.5});
+let eqBeforeSave = null;
 const eqFixture = () => ({available:true,enabled:false,gains_db:[0,0,0,0,0],frequencies_hz:[125,500,2000,4000,8000],status:'original'});
 const initial = () => ({eq:eqFixture(),system:systemFixture(),available:true, power:'On', mode:'Standard', volume:12, muted:false, input:'TV / ARC', source:6, source_state:0, hostname:'jbl.local', csrf:'fixture', uptime:90300, watcher:'STANDARD_THIS_WAKE', sound:{bass:0,center:0,atmos:1,rear:2,rear_docked:true,rear_battery_left:80,rear_battery_right:90,night:false,av_sync_ms:20}, wifi:{available:true,connected:true,ssid:'Example Wi-Fi',ip:'192.168.50.1',signal_dbm:-48,frequency_mhz:5180}, bluetooth:{selected:false,connectable:false,discoverable:false,connected:false,media_ready:true,audio:'Disconnected',name:'My speaker'}});
 let screenshotFeatures = null;
@@ -54,10 +55,13 @@ const server = createServer(async (req, res) => {
       await pause(delay);
       if (failure) { res.writeHead(409, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:failure,state})); return; }
       if (action === 'eq_apply' && state.eq?.available===false && typeof state.eq.kept==='boolean' && payload.gains_db.some(value=>value!==0)) {
-        // A remote that keeps the EQ saves one it cannot apply now.
-        state.eq={...state.eq,enabled:false,kept:true,gains_db:[...payload.gains_db],status:'waiting',error:'Your EQ is re-applied automatically when Standard audio plays.'};
+        // A remote that keeps the EQ saves one it cannot apply now; until it
+        // is applied, cancel goes back to the state before the first save.
+        eqBeforeSave ??= {...state.eq};
+        state.eq={...state.eq,enabled:false,kept:true,gains_db:[...payload.gains_db],status:'waiting',error:'Your EQ is re-applied automatically when Standard audio plays.',pending:true};
       } else if (action === 'eq_apply') {state.eq={...state.eq,enabled:payload.gains_db.some(value=>value!==0),gains_db:[...payload.gains_db],status:payload.gains_db.some(value=>value!==0)?'active':'ready'};}
       if (action === 'eq_reset') state.eq={...eqFixture()};
+      if (action === 'eq_cancel' && eqBeforeSave) { state.eq=eqBeforeSave; eqBeforeSave=null; }
       if (action === 'night_toggle') state.sound.night=!state.sound.night;
       // A2DP can remain Streaming while the app handles AVRCP Play/Pause.
       // Only a real receiver media session has an independently reported player state.
@@ -275,6 +279,15 @@ try {
   await page.locator('#eq-apply').click();
   await page.waitForFunction(()=>document.querySelector('#message-text').textContent==='Front EQ saved. It is applied when Standard audio plays.');
   check(lastPayload.action==='eq_apply' && JSON.stringify(lastPayload.gains_db)==='[0,0,-1,-2,-3]' && state.eq.status==='waiting' && await page.locator('#eq-preset').inputValue()==='warm' && await page.locator('#eq-panel').getAttribute('data-state')==='waiting','saving sends the curve once and shows it as waiting');
+  // While the saved curve waits, Save EQ turns into Cancel saved EQ.
+  check((await page.locator('#eq-apply').textContent())==='Cancel saved EQ' && await page.locator('#eq-apply').isEnabled() && await page.locator('#eq-apply').getAttribute('data-action')==='eq_cancel' && (await page.locator('#eq-state').textContent())==='Saved: it is applied when Standard audio plays. Select Cancel saved EQ to go back to your previous setting.','a saved EQ waiting can be cancelled from the same button');
+  await page.locator('#eq-preset').selectOption('bright');
+  check((await page.locator('#eq-apply').textContent())==='Save EQ' && await page.locator('#eq-apply').getAttribute('data-action')==='eq_apply','a new change turns the button back into Save EQ');
+  await page.locator('#eq-preset').selectOption('warm');
+  check((await page.locator('#eq-apply').textContent())==='Cancel saved EQ','back to the saved curve, the button cancels again');
+  await page.locator('#eq-apply').click();
+  await page.waitForFunction(()=>document.querySelector('#message-text').textContent==='Saved EQ cancelled.');
+  check(lastPayload.action==='eq_cancel' && lastPayload.gains_db===undefined && await page.locator('#eq-slider-3').inputValue()==='-6' && (await page.locator('#eq-apply').textContent())==='Save EQ' && await page.locator('#eq-apply').isDisabled() && await badge()==='waiting:Waiting','cancel sends no bands and shows the EQ kept before, with Save EQ again');
   state.eq={...eqFixture(),available:false,enabled:false,kept:false,status:'unavailable',error:'native EQ is not ready on this audio route'};
   await page.waitForFunction(()=>document.querySelector('#eq-state').textContent.startsWith('The EQ does not apply on this audio route.'));
   check((await page.locator('#eq-state').textContent())==='The EQ does not apply on this audio route. Choose an EQ now: it is applied when Standard audio plays.' && await page.locator('#eq-preset').isEnabled() && await page.locator('#eq-apply').isDisabled(),'with nothing kept, an unsupported route still lets the owner choose an EQ');

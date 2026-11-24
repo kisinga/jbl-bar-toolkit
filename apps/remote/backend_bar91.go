@@ -73,7 +73,7 @@ func bar91ActionTimeout(request server.Command) time.Duration {
 		return avSyncTimeout
 	case "calibrate", "sub_pair":
 		return setupTimeout
-	case "bar91.front-eq.apply", "bar91.front-eq.reset":
+	case "bar91.front-eq.apply", "bar91.front-eq.reset", "bar91.front-eq.cancel":
 		return eqActionTimeout
 	}
 	return 15 * time.Second

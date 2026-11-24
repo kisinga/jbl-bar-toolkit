@@ -44,7 +44,14 @@ const (
 // place, it kept the Front EQ panel unavailable and its message on screen
 // while the EQ played normally.
 func eqRouteProblemOver(problem string, readErr error) bool {
-	return readErr == nil && (problem == eqActiveProblem || problem == eqDeferredProblem)
+	return readErr == nil && eqRouteProblem(problem)
+}
+
+// eqRouteProblem reports a problem that only says the EQ could not be reset
+// on the current audio route: the monitor finishes the reset by itself once
+// Standard Bluetooth audio plays.
+func eqRouteProblem(problem string) bool {
+	return problem == eqActiveProblem || problem == eqDeferredProblem
 }
 
 func eqPendingDecision(resetErr error, action string, mode func() (uint32, error)) (proceed bool, problem string, err error) {
