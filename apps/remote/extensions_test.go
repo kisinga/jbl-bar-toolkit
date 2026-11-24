@@ -91,7 +91,7 @@ func TestExtensionParametersAreTyped(t *testing.T) {
 }
 
 func TestBar91ReplyTimeoutCoversEQNamesAndAliases(t *testing.T) {
-	for _, action := range []string{"eq_apply", "eq_reset", "bar91.front-eq.apply", "bar91.front-eq.reset"} {
+	for _, action := range []string{"eq_apply", "eq_reset", "eq_cancel", "bar91.front-eq.apply", "bar91.front-eq.reset", "bar91.front-eq.cancel"} {
 		timeout := bar91ActionTimeout(server.Command{Action: action})
 		if timeout != eqActionTimeout {
 			t.Fatalf("%s: %v", action, timeout)

@@ -170,6 +170,73 @@ func TestKeepFrontEQLaterReplacesTheAppliedEQ(t *testing.T) {
 	}
 }
 
+// Cancel goes back to what was there before the first EQ saved for later,
+// whatever was saved after it, and only while a saved EQ waits.
+func TestCancelKeptFrontEQLater(t *testing.T) {
+	saved := eqKeepPath
+	eqKeepPath = filepath.Join(t.TempDir(), "front-eq.json")
+	defer func() { eqKeepPath = saved }()
+	a, b, c := [5]float64{-2, 0, 0, 0, 0}, [5]float64{-3, -1, 0, 0, -1}, [5]float64{0, 0, -1, -2, -3}
+	standby := state{Available: true, Power: "Standby"}
+
+	// An EQ still applied (its reset failed at power-off) and kept.
+	d := &device{}
+	d.eq.active, d.eq.gains, d.eq.problem = true, a, eqActiveProblem
+	d.keepFrontEQGains(a)
+	if d.cancelKeptFrontEQLater() {
+		t.Fatal("cancel with no EQ saved for later")
+	}
+	if d.frontEQStatus(standby).Pending {
+		t.Fatal("pending before any save")
+	}
+	d.keepFrontEQLater(b, "standby")
+	d.keepFrontEQLater(c, "standby")
+	if out := d.frontEQStatus(standby); !out.Pending || [5]float64(out.Gains) != c || out.Status != "waiting" {
+		t.Fatalf("after two saves %+v", out)
+	}
+	if !d.cancelKeptFrontEQLater() || d.eq.undo != nil {
+		t.Fatal("cancel refused")
+	}
+	if !d.eq.keep || d.eq.kept != a || d.eq.offPending || !d.eq.active {
+		t.Fatalf("not back to the applied EQ: keep %v kept %v offPending %v active %v", d.eq.keep, d.eq.kept, d.eq.offPending, d.eq.active)
+	}
+	if k, ok := loadKeptEQ(eqKeepPath); !ok || k != a {
+		t.Fatalf("kept file %v %v", k, ok)
+	}
+	if out := d.frontEQStatus(standby); out.Pending || !out.Enabled || [5]float64(out.Gains) != a {
+		t.Fatalf("after cancel %+v", out)
+	}
+	if d.cancelKeptFrontEQLater() {
+		t.Fatal("second cancel accepted")
+	}
+
+	// Nothing kept before: cancel forgets the EQ saved.
+	d = &device{}
+	d.keepFrontEQLater(b, "Smart Mode")
+	if !d.cancelKeptFrontEQLater() || d.eq.keep {
+		t.Fatalf("keep %v after cancel", d.eq.keep)
+	}
+	if _, ok := loadKeptEQ(eqKeepPath); ok {
+		t.Fatal("kept file left after cancel")
+	}
+
+	// Saving back to what was kept leaves nothing to cancel.
+	d = &device{}
+	d.keepFrontEQGains(a)
+	d.keepFrontEQLater(b, "standby")
+	d.keepFrontEQLater(a, "standby")
+	if d.eq.undo != nil || d.frontEQStatus(standby).Pending {
+		t.Fatal("pending after saving the kept EQ again")
+	}
+
+	// Turning the EQ off ends it too.
+	d.keepFrontEQLater(b, "standby")
+	d.forgetKeptFrontEQ()
+	if d.eq.undo != nil {
+		t.Fatal("pending after turning off")
+	}
+}
+
 // A failed reset used to be retried, and reported as a control, every
 // monitor tick: the page flashed "Another control is running" every two
 // seconds. It is retried only once the native state changes.

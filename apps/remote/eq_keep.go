@@ -220,14 +220,40 @@ func (d *device) eqDeferReason() string {
 // hold d.mu.
 func (d *device) keepFrontEQLater(gains [5]float64, reason string) {
 	m := &d.eq
+	if m.undo == nil {
+		m.undo = &eqKeptState{keep: m.keep, kept: m.kept, offPending: m.offPending}
+	}
 	d.keepFrontEQGains(gains)
 	m.keepStable = 0
 	m.offPending = m.active && m.gains != gains
+	if *m.undo == (eqKeptState{keep: m.keep, kept: m.kept, offPending: m.offPending}) {
+		m.undo = nil // saved back to what was there: nothing to cancel
+	}
 	if m.offPending {
 		m.note("Front EQ saved (%s); it replaces the applied one when Standard audio plays", reason)
 	} else {
 		m.note("Front EQ saved (%s); it is applied when Standard audio plays", reason)
 	}
+}
+
+// cancelKeptFrontEQLater goes back to what was there before the EQ saved for
+// later (keepFrontEQLater): the EQ kept before, or none, and an EQ still
+// applied stays. It reports false when no saved EQ waits. Callers hold d.mu.
+func (d *device) cancelKeptFrontEQLater() bool {
+	m := &d.eq
+	if m.undo == nil {
+		return false
+	}
+	before := *m.undo
+	m.undo = nil
+	if before.keep {
+		d.keepFrontEQGains(before.kept)
+	} else {
+		d.forgetKeptFrontEQ()
+	}
+	m.offPending, m.keepStable = before.offPending, 0
+	m.note("Front EQ saved for later cancelled")
+	return true
 }
 
 // eqBlockDiff counts the bytes that differ between two native blocks and
@@ -314,7 +340,7 @@ func (d *device) keepFrontEQ(ctx context.Context, report func(string)) {
 		m.note("Front EQ could not be applied again: %v", e)
 		return
 	}
-	m.keepBlocked = ""
+	m.keepBlocked, m.undo = "", nil
 	m.note("Front EQ applied again")
 }
 
@@ -411,7 +437,7 @@ func (d *device) keepFrontEQGains(g [5]float64) {
 
 func (d *device) forgetKeptFrontEQ() {
 	m := &d.eq
-	m.kept, m.keep, m.keepBlocked, m.keepStable = [5]float64{}, false, "", 0
+	m.kept, m.keep, m.keepBlocked, m.keepStable, m.undo = [5]float64{}, false, "", 0, nil
 	if e := clearKeptEQ(eqKeepPath); e != nil {
 		log.Printf("Front EQ: cannot remove the kept EQ: %v", e)
 	}

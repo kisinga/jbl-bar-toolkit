@@ -200,6 +200,7 @@ async function refresh() {
 function success(action, s) {
   s=capabilities.state(s);
   if (action === 'eq_apply' && s.eq?.status === 'waiting') return 'Front EQ saved. It is applied when Standard audio plays.';
+  if (action === 'eq_cancel') return 'Saved EQ cancelled.';
   if (action === 'eq_reset' || (action === 'eq_apply' && s.eq?.enabled === false)) return 'Original tuning restored.';
   if (action === 'eq_apply') return 'Front EQ applied.';
 	if (action === 'night_toggle') return 'Night mode ' + (s.sound?.night ? 'on.' : 'off.');
@@ -242,6 +243,7 @@ function pendingMessage() {
   if (active === 'reboot') return 'Restarting the soundbar…';
   if (active === 'display_clock') return 'Setting the clock…';
   if (active === 'eq_reset') return 'Restoring original tuning…';
+  if (active === 'eq_cancel') return 'Cancelling the saved EQ…';
 	if (active === 'night_toggle') return 'Changing night mode… audio may briefly mute.';
 	if (active?.startsWith('media_')) return 'Sending playback control…';
   if (isVolume(active)) return 'Adjusting volume' + (queue.length ? ' · ' + queue.length + ' queued' : '') + '…';
